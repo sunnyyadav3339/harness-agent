@@ -45,3 +45,6 @@ harness = ["perception/*.js", "runlog/*.html"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.setuptools.package-data]
+harness = ["**/*.html"]

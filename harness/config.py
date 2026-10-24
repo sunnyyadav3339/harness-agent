@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     # turns it off for development so the agent's Chrome never jumps over your windows.
     browser_foreground: bool = True
 
+    # Local web console served by the daemon (127.0.0.1 only); 0 turns it off.
+    web_port: int = 8765
+
     ntp_server: str = "time.google.com"
     log_level: str = "INFO"
 

@@ -44,6 +44,12 @@ class Daemon:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.channel = build_channel(settings, console=False)
+        self.web = None
+        if settings.web_port:
+            from ..channels.web import WebChannel
+
+            self.web = WebChannel(self, settings.web_port)
+            self.channel.channels.append(self.web)
         self.channel.on_command = self.on_command
         self.runner = Runner(settings, self.channel)
         self.queue: asyncio.PriorityQueue[Job] = asyncio.PriorityQueue()
@@ -226,7 +232,8 @@ class Daemon:
                                   state_file=self.settings.state_dir / "imap_state.json")
             self._watchers.append(watcher)
             background.append(await start_watcher(watcher, self._on_mail))
-        await self.channel.send(f"🟢 Harness daemon online. {len(self.scheduler.get_jobs())} job(s). /help for commands.")
+        console = f" Console: http://127.0.0.1:{self.settings.web_port}" if self.web else ""
+        await self.channel.send(f"🟢 Harness daemon online. {len(self.scheduler.get_jobs())} job(s). /help for commands.{console}")
         try:
             await asyncio.gather(*background)
         finally:

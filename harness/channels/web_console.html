@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Console</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #16181d; --muted: #5d6470; --line: #e3e6eb;
+  --accent: #2f5bea; --accent-ink: #ffffff; --ok: #15803d; --err: #b42318; --warn: #b54708;
+  --ask-bg: #fff7e6; --ask-line: #f5c46b; --code: #f1f3f6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1115; --panel: #171a21; --ink: #e8eaee; --muted: #9aa2af; --line: #2a2f3a;
+    --accent: #6d8cff; --accent-ink: #0f1115; --ok: #4ade80; --err: #f87171; --warn: #fbbf24;
+    --ask-bg: #2a2212; --ask-line: #8a6a22; --code: #1f232c;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); overflow-x: hidden;
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--line);
+  background: var(--panel); position: sticky; top: 0; z-index: 2; }
+header h1 { font-size: 16px; margin: 0; font-weight: 650; }
+header .meta { color: var(--muted); font-size: 13px; margin-left: auto; display: flex; gap: 14px; flex-wrap: wrap; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 6px; }
+.dot.busy { background: var(--warn); } .dot.idle { background: var(--ok); } .dot.down { background: var(--err); }
+main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; padding: 16px 20px; max-width: 1400px; margin: 0 auto; }
+@media (max-width: 900px) { main { grid-template-columns: 1fr; padding: 12px 16px; } }
+section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
+section h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+textarea { width: 100%; min-height: 70px; resize: vertical; padding: 10px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--ink); font: inherit; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+select, button { font: inherit; border-radius: 8px; border: 1px solid var(--line); padding: 7px 12px; background: var(--panel); color: var(--ink); }
+button { cursor: pointer; } button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button.danger { color: var(--err); }
+.hint { color: var(--muted); font-size: 12px; }
+.ask { background: var(--ask-bg); border: 1px solid var(--ask-line); border-radius: 10px; padding: 12px; margin-bottom: 10px; }
+.ask p { margin: 0 0 8px; font-weight: 600; }
+.ask img { max-width: 100%; border-radius: 6px; border: 1px solid var(--line); margin-bottom: 8px; display: block; }
+.status { font-size: 12px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); white-space: nowrap; }
+.status.done, .status.succeeded { color: var(--ok); } .status.failed, .status.crashed { color: var(--err); }
+.status.running { color: var(--warn); } .status.cancelled { color: var(--muted); }
+.steps { display: flex; flex-direction: column; gap: 10px; }
+.step { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+.step:first-child { border-top: 0; padding-top: 0; }
+@media (max-width: 600px) { .step { grid-template-columns: 1fr; } }
+.step img { width: 100%; border-radius: 6px; border: 1px solid var(--line); cursor: zoom-in; }
+.step .head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.step .head b { font-size: 13px; } .step .head span { color: var(--muted); font-size: 12px; }
+.why { margin: 4px 0; }
+.acts { font: 12px/1.4 ui-monospace, Consolas, monospace; background: var(--code); border-radius: 6px; padding: 6px 8px; overflow-x: auto; }
+.res { font-size: 12px; margin-top: 4px; } .res .ok { color: var(--ok); } .res .err { color: var(--err); }
+.event { font-size: 13px; padding: 6px 10px; border-radius: 6px; background: var(--code); }
+.event.guard-failed, .event.guard-blocked { color: var(--err); } .event.handoff { color: var(--warn); }
+.list { display: flex; flex-direction: column; gap: 8px; }
+.item { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.item.clickable { cursor: pointer; } .item.clickable:hover, .item.sel { border-color: var(--accent); }
+.item .t { font-size: 13px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.item .s { color: var(--muted); font-size: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 3px; }
+a { color: var(--accent); }
+.empty { color: var(--muted); font-size: 13px; }
+#zoom { position: fixed; inset: 0; background: rgba(0,0,0,.8); display: none; align-items: center; justify-content: center; z-index: 9; cursor: zoom-out; }
+#zoom img { max-width: 96vw; max-height: 94vh; }
+.feed div { font-size: 12px; border-bottom: 1px dashed var(--line); padding: 4px 0; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Agent Console</h1>
+  <div class="meta">
+    <span id="hstatus"><span class="dot"></span>connecting…</span>
+    <span id="hclock"></span>
+    <span id="hqueue"></span>
+  </div>
+</header>
+<main>
+  <div>
+    <section>
+      <h2>New task</h2>
+      <textarea id="task" placeholder="Tell the agent what to do, e.g. “Make a spreadsheet of today's top 5 tech headlines on my Desktop”"></textarea>
+      <div class="row">
+        <select id="skill"><option value="">Pick a skill automatically</option></select>
+        <button class="primary" id="go">Run</button>
+        <button class="danger" id="stop">Stop current run</button>
+        <span class="hint" id="gomsg"></span>
+      </div>
+    </section>
+    <div id="asks"></div>
+    <section>
+      <h2 id="runtitle">Live run</h2>
+      <div id="runmeta" class="hint"></div>
+      <div class="steps" id="steps"><div class="empty">No run selected yet. Start a task, or pick a past run on the right.</div></div>
+    </section>
+  </div>
+  <aside>
+    <section>
+      <h2>Schedules</h2>
+      <div class="list" id="jobs"></div>
+    </section>
+    <section>
+      <h2>Recent runs</h2>
+      <div class="list" id="runs"></div>
+    </section>
+    <section>
+      <h2>Skills</h2>
+      <div class="list" id="skills"></div>
+    </section>
+    <section>
+      <h2>Messages</h2>
+      <div class="feed" id="feed"></div>
+    </section>
+  </aside>
+</main>
+<div id="zoom"><img alt=""></div>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let selected = null, follow = true, after = 0, shownAsks = "", skillsLoaded = false;
+
+async function api(path, body) {
+  const r = await fetch(path, body ? {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)} : {});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+function renderAsks(asks) {
+  const sig = JSON.stringify(asks.map((a) => a.id));
+  if (sig === shownAsks) return;
+  shownAsks = sig;
+  $("asks").innerHTML = asks.map((a) => `
+    <section class="ask"><h2>The agent needs you</h2>
+      <p>${esc(a.question)}</p>
+      ${a.image ? `<img src="/api/ask/${a.id}.jpg" alt="screen at the moment of the question">` : ""}
+      <div class="row">${a.options.map((o, i) => `<button class="${i === 0 ? "primary" : ""}" data-ask="${a.id}" data-ans="${esc(o)}">${esc(o)}</button>`).join("")}</div>
+    </section>`).join("");
+}
+
+let sideSig = "";
+function renderSide(s) {
+  // Redraw only on change, so clicks and hover are not lost every poll.
+  const sig = JSON.stringify([s.jobs, s.runs, s.skills, s.feed, selected]);
+  if (sig === sideSig) return;
+  sideSig = sig;
+  $("jobs").innerHTML = s.jobs.length ? s.jobs.map((j) => `<div class="item"><div class="t">${esc(j.id.replace("sched:", ""))}</div><div class="s">${esc(j.next)} IST</div></div>`).join("")
+    : `<div class="empty">No upcoming schedules.</div>`;
+  $("runs").innerHTML = s.runs.map((r) => `
+    <div class="item clickable ${r.run_id === selected ? "sel" : ""}" data-run="${esc(r.run_id)}">
+      <div class="t">${esc(r.task)}</div>
+      <div class="s"><span class="status ${esc(r.status)}">${esc(r.status)}</span><span>${esc(r.started.replace("T", " "))}</span>
+        <span>${r.steps} steps · ${r.handoffs} handoff${r.handoffs === 1 ? "" : "s"}</span>
+        ${r.replay ? `<a href="/runs/${encodeURIComponent(r.run_id)}/replay.html" target="_blank">replay</a>` : ""}</div>
+    </div>`).join("") || `<div class="empty">No runs yet.</div>`;
+  $("skills").innerHTML = s.skills.map((k) => `<div class="item"><div class="t"><b>${esc(k.name)}</b>${k.draft ? " (draft)" : ""}</div><div class="s">${esc(k.description)}</div></div>`).join("");
+  if (!skillsLoaded && s.skills.length) {
+    $("skill").innerHTML += s.skills.map((k) => `<option value="${esc(k.name)}">${esc(k.name)}</option>`).join("");
+    skillsLoaded = true;
+  }
+  $("feed").innerHTML = s.feed.slice().reverse().map((m) => `<div>${esc(new Date(m.ts * 1000).toLocaleTimeString())} · ${esc(m.text)}</div>`).join("") || `<div class="empty">Nothing yet.</div>`;
+}
+
+function stepHtml(r, runId) {
+  if (r.type === "step") {
+    const img = r.images && (r.images.annotated || r.images.screen);
+    const acts = (r.actions || []).map((a) => `${esc(a.tool)}(${esc(JSON.stringify(a.args || {}))})`).join("<br>") || "(no action)";
+    const res = (r.results || []).map((x) => `<div class="${x.ok ? "ok" : "err"}">${x.ok ? "✓" : "✗"} ${esc((x.summary || "").slice(0, 260))}</div>`).join("");
+    return `<div class="step">
+      <div>${img ? `<img loading="lazy" src="/runs/${encodeURIComponent(runId)}/${esc(img)}" alt="step ${r.step} screen">` : ""}</div>
+      <div><div class="head"><b>Step ${r.step}</b><span>${esc(r.phase || "")}</span><span>${esc((r.ist || "").slice(11, 19))}</span><span>${esc(r.model || "")}</span></div>
+        <div class="why">${esc(r.thought || "")}</div><div class="acts">${acts}</div><div class="res">${res}</div></div></div>`;
+  }
+  const t = esc((r.ist || "").slice(11, 19));
+  switch (r.event) {
+    case "started": return `<div class="event">${t} · Started (${esc(r.skill || "no skill")})</div>`;
+    case "guard": return `<div class="event guard-${esc(r.outcome)}">${t} · Check <b>${esc(r.name)}</b>: ${esc(r.outcome)}${r.detail ? ` — ${esc(String(r.detail).slice(-200))}` : ""}</div>`;
+    case "handoff": return `<div class="event handoff">${t} · Asked the human (${esc(r.reason || "")}): ${esc(r.question || "")}</div>`;
+    case "handoff_resolved": return `<div class="event handoff">${t} · Answer via ${esc(r.source)}: ${esc(r.answer)} (after ${esc(r.waited_s)} s)</div>`;
+    case "finished": return `<div class="event"><b>${t} · Finished: ${esc(r.status)}</b> — ${esc(r.summary || "")}</div>`;
+    default: return r.message ? `<div class="event">${t} · ${esc(r.event)}: ${esc(r.message)}</div>` : "";
+  }
+}
+
+async function loadRun(runId, reset) {
+  if (reset) { after = 0; $("steps").innerHTML = ""; }
+  const j = await api(`/api/run/${encodeURIComponent(runId)}?after=${after}`);
+  if (runId !== selected) return;
+  after = j.next;
+  const m = j.meta;
+  $("runtitle").textContent = m.status === "running" ? "Live run" : "Run";
+  $("runmeta").innerHTML = `${esc(m.task)}<br>${esc(m.run_id)} · trigger ${esc(m.trigger)} · <span class="status ${esc(m.status)}">${esc(m.status)}</span>`
+    + (m.status !== "running" ? ` · <a href="/runs/${encodeURIComponent(runId)}/replay.html" target="_blank">open replay</a>` : "");
+  if (j.records.length) {
+    const atBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
+    $("steps").insertAdjacentHTML("beforeend", j.records.map((r) => stepHtml(r, runId)).join(""));
+    if (follow && atBottom && !reset) window.scrollTo(0, document.body.scrollHeight);
+  }
+}
+
+async function tick() {
+  try {
+    const s = await api("/api/state");
+    const busy = !!s.running;
+    $("hstatus").innerHTML = `<span class="dot ${busy ? "busy" : "idle"}"></span>${busy ? `Running · step ${s.running.step} · ${esc(s.running.phase)}` : "Idle"}`;
+    $("hclock").textContent = `${s.clock} IST`;
+    $("hqueue").textContent = s.queue ? `${s.queue} queued` : "";
+    renderAsks(s.asks);
+    renderSide(s);
+    if (follow && s.running && s.running.run_id && s.running.run_id !== selected) { selected = s.running.run_id; await loadRun(selected, true); }
+    else if (selected) await loadRun(selected, false);
+  } catch (e) {
+    $("hstatus").innerHTML = `<span class="dot down"></span>Daemon not reachable`;
+  }
+}
+
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-ask]");
+  if (b) { b.disabled = true; try { await api("/api/answer", {id: b.dataset.ask, answer: b.dataset.ans}); shownAsks = ""; } catch (err) { alert(err.message); } tick(); return; }
+  const r = e.target.closest("[data-run]");
+  if (r && !e.target.closest("a")) { selected = r.dataset.run; follow = false; await loadRun(selected, true); tick(); return; }
+  if (e.target.matches(".step img")) { $("zoom").querySelector("img").src = e.target.src; $("zoom").style.display = "flex"; return; }
+  if (e.target.closest("#zoom")) $("zoom").style.display = "none";
+});
+$("go").onclick = async () => {
+  const task = $("task").value.trim();
+  if (!task) return;
+  try {
+    const j = await api("/api/task", {task, skill: $("skill").value});
+    $("gomsg").textContent = `Queued #${j.queued}${j.busy ? " (after the current run)" : ""}`;
+    $("task").value = ""; follow = true;
+  } catch (err) { $("gomsg").textContent = err.message; }
+  tick();
+};
+$("task").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $("go").click(); });
+$("stop").onclick = async () => { if (confirm("Stop the current run?")) { const j = await api("/api/stop", {}); $("gomsg").textContent = j.message || ""; } };
+tick(); setInterval(tick, 1500);
+</script>
+</body>
+</html>
