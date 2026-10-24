@@ -100,7 +100,7 @@ class ToolRegistry:
         # Skill guards run here, so they also cover steps inside macros.
         from ..runtime import guards
 
-        blocked = await guards.check(ctx, name, args)
+        blocked = await guards.check(ctx, name, args, rendered)
         if blocked is not None:
             return blocked
         t0 = time.perf_counter()

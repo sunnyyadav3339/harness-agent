@@ -21,7 +21,7 @@ macro that must pass, or blocks the action outright:
   args_lack     the action's arguments do NOT contain this substring (e.g. a required quota)
 
 Instead of run_macro/block, `min_interval_s: N` blocks a repeat of a matching action within N seconds
-(anti double-submit).
+(anti double-submit), and `defaults: {arg: value}` fills arguments the action left out.
 """
 
 from __future__ import annotations
@@ -83,8 +83,10 @@ def _matches(ctx: "RunContext", when: dict, tool: str, args: dict) -> bool:
     return True
 
 
-async def check(ctx: "RunContext", tool: str, args: dict) -> ToolResult | None:
-    """Return a failing ToolResult if a guard blocks this action, else None."""
+async def check(ctx: "RunContext", tool: str, args: dict, rendered: dict | None = None) -> ToolResult | None:
+    """Return a failing ToolResult if a guard blocks this action, else None.
+
+    `defaults` guards fill missing arguments in `rendered` (the arguments the tool will receive)."""
     skill = ctx.skill
     guards = (skill.meta.get("guards") if skill else None) or []
     if not guards or ctx.extra.get("in_guard"):
@@ -98,6 +100,14 @@ async def check(ctx: "RunContext", tool: str, args: dict) -> ToolResult | None:
         if not _matches(ctx, guard.get("when") or {}, tool, args):
             continue
         name = guard.get("name") or "guard"
+        if guard.get("defaults"):
+            # Arguments the model must not forget (e.g. the payment handoff resuming by itself on the PNR page).
+            filled = [k for k, v in guard["defaults"].items() if rendered is not None and rendered.get(k) is None]
+            for k in filled:
+                rendered[k] = guard["defaults"][k]
+            if filled:
+                ctx.run.event("guard", name=name, outcome="filled", tool=tool, detail=", ".join(filled))
+            continue
         if guard.get("min_interval_s"):
             # Anti double-submit: the same critical click again within the window means the page was still
             # processing the first one (IRCTC answers a double click with its /nget/error page).

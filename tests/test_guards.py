@@ -20,6 +20,9 @@ guards:
   - name: must_check
     when: {tool: task.note, task_contains: "CHECKED"}
     run_macro: check
+  - name: fill_note
+    when: {tool: task.note, task_contains: "DEFAULTS"}
+    defaults: {text: "filled by guard"}
 ---
 body
 ```yaml macros
@@ -103,3 +106,11 @@ async def test_min_interval_blocks_a_quick_repeat_but_not_after_a_blocked_attemp
     assert await guards.check(ctx, "task.note", {"text": "x"}) is None    # allowed, window starts
     again = await guards.check(ctx, "task.note", {"text": "x"})
     assert again is not None and "once_note" in again.error             # quick repeat blocked
+
+
+async def test_defaults_guard_fills_missing_arguments_only(workspace):
+    ctx = _ctx(workspace, "DEFAULTS: note something")
+    res = await REGISTRY.call("task.note", {}, ctx)
+    assert res.ok and ctx.notes == ["filled by guard"]
+    res = await REGISTRY.call("task.note", {"text": "mine"}, ctx)
+    assert res.ok and ctx.notes[-1] == "mine"

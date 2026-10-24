@@ -14,6 +14,11 @@ guards:
   - name: human_only_for_payment
     when: {tool: human.ask, args_lack: "payment"}
     block: "The human only approves the payment. Solve this yourself: re-observe and follow the skill's recovery steps (login problems: login_fresh / login_captcha; captchas: vision.ocr_into; popups: close them; error page: Click here to login)."
+  # Verified 25-Oct 03:45: the model asked without wait_for/options, so a real payment would not have resumed by
+  # itself on the PNR page. The harness fills what it left out.
+  - name: payment_handoff_resumes_on_pnr
+    when: {tool: human.ask, url_contains: "phonepe"}
+    defaults: {options: ["Paid", "Cancel"], wait_for: {text: "PNR"}, timeout_s: 330}
   - name: no_payment_in_rehearsal
     when: {task_contains: "REHEARSAL", click_text: "Pay & Book"}
     block: "This is a REHEARSAL: never click Pay & Book. Stop now with task.done (REHEARSAL, NOT BOOKED)."
@@ -440,3 +445,5 @@ fill_passenger:
 - [Auto-learned 2026-10-24 22:37 IST]: After filling the passenger form, click the first Continue button, then wait for the URL to contain "/booking/reviewBooking" before clicking the second Continue to reach the payment page.
 - [Auto-learned 2026-10-24 22:37 IST]: If a modal overlay (e.g., concession warning) appears on the passenger form, dismiss it with Escape or its 'OK' button before clicking Continue, then wait for any 'Please Wait...' overlay to disappear before proceeding.
 - [Auto-learned 2026-10-24 22:44 IST]: On the IRCTC payment page, locate the visible 'Pay & Book' button using a selector that filters hidden elements, e.g. `button.btn-primary:visible` or `button:has-text("Pay & Book"):visible`, and click it only after confirming it is not hidden or overlapped.
+- [Auto-learned 2026-10-25 03:47 IST]: Run fill_passenger before verify_passenger; verify_passenger fails if the form fields are not yet populated.
+- [Auto-learned 2026-10-25 03:47 IST]: Click the 'Continue' button on the Review Journey page before invoking pay_upi_request; the macro expects the payment page to be active.
