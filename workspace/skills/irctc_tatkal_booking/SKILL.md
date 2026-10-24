@@ -15,6 +15,12 @@ guards:
   - name: no_payment_macro_in_rehearsal
     when: {task_contains: "REHEARSAL", macro: "pay_and_book"}
     block: "This is a REHEARSAL: never start payment. Stop now with task.done (REHEARSAL, NOT BOOKED)."
+  - name: no_credit_upi
+    when: {url_contains: "irctcpayments.com", click_text: "UPI (CC/CL)"}
+    block: "UPI (CC/CL) is UPI on credit cards/lines, not a UPI-ID collect. BHIM/UPI was not selected on the passenger form: click Cancel on this gateway and fix the payment mode."
+  - name: no_scripts_on_payment_gateway
+    when: {url_contains: "irctcpayments.com", tool: "browser.eval"}
+    block: "No scripted actions on the payment gateway: use visible element clicks/typing only, or ask the human."
   - name: passenger_and_options_verified
     when: {url_contains: "/booking/psgninput", click_text: "Continue"}
     run_macro: verify_passenger
