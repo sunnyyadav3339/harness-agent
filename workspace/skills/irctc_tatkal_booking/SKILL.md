@@ -18,6 +18,18 @@ guards:
   - name: no_qr_payment_in_rehearsal
     when: {task_contains: "REHEARSAL", macro: "upi_qr_pay"}
     block: "This is a REHEARSAL: never start payment. Stop now with task.done (REHEARSAL, NOT BOOKED)."
+  - name: no_upi_request_in_rehearsal
+    when: {task_contains: "REHEARSAL", macro: "pay_upi_request"}
+    block: "This is a REHEARSAL: never start payment. Stop now with task.done (REHEARSAL, NOT BOOKED)."
+  - name: no_scripts_on_phonepe
+    when: {url_contains: "phonepe.com", tool: "browser.eval"}
+    block: "No scripted actions on the payment gateway: use visible element clicks/typing only, or ask the human."
+  - name: no_scripts_on_razorpay
+    when: {url_contains: "razorpay.com", tool: "browser.eval"}
+    block: "No scripted actions on the payment gateway: use visible element clicks/typing only, or ask the human."
+  - name: no_scripts_on_payu
+    when: {url_contains: "payu.in", tool: "browser.eval"}
+    block: "No scripted actions on the payment gateway: use visible element clicks/typing only, or ask the human."
   - name: no_credit_upi
     when: {url_contains: "irctcpayments.com", click_text: "UPI (CC/CL)"}
     block: "UPI (CC/CL) is UPI on credit cards/lines, not a UPI-ID collect. BHIM/UPI was not selected on the passenger form: click Cancel on this gateway and fix the payment mode."
@@ -122,6 +134,16 @@ Close any popup: for the language dialog click "English"; for alerts click OK or
   "Multiple Payment Service" and "BHIM/ UPI/ USSD" (the BHIM group only appears in UPI mode), with the
   "IRCTC iPay New" tile; fare ₹75 + Convenience Fee ₹11.80 (UPI rate) = ₹86.80 for 12054 2S GENERAL. If you see the
   long card/netbanking list instead, or a ₹17.70 fee, UPI mode did not take: go Back and fix the passenger form.
+- **Preferred: UPI request to the human's phone (UPI ID).** Verified 24-Oct 22:59: "Multiple Payment Service" lists
+  PhonePe, PayU, Razorpay, Paytm. Run `skill.run_macro pay_upi_request` (gateway = `booking.gateway`, PhonePe).
+  On the gateway page (not yet verified, read the screen): choose UPI, then the option to pay with a UPI ID / VPA
+  (NOT a QR or "scan" option), type `{{secret.UPI_ID}}` into it, and click the button that sends the request
+  (Verify / Pay / Proceed). If the gateway offers no UPI-ID field, click its Cancel/Back, return to the payment
+  page and run pay_upi_request again with params {gateway: booking.gateway_fallback} (Razorpay).
+- When the page says the request was sent (e.g. "approve the payment request in your UPI app", or a countdown),
+  call `human.ask(question="Approve the UPI request of ₹<fare> for <train> <class> in your PhonePe app (or decline)", options=["Paid", "Cancel"], reason="payment", wait_for={"text": "PNR"}, timeout_s=420)`.
+  The run resumes by itself when the confirmation page shows a PNR. Never ask the human to operate the laptop.
+- Last resort only (if no gateway accepts a UPI ID): IRCTC iPay with a QR code, as below.
 - Use `skill.run_macro pay_and_book`: it selects the "IRCTC iPay New" tile, then clicks the visible Pay & Book.
   Verified 24-Oct: with the tile unselected, Pay & Book gave "Unable to process Payment request now, Please try
   again later.", and the page also holds three hidden "Pay & Book" copies, so never click it by plain text.
@@ -201,6 +223,16 @@ pay_and_book:
   steps:
     # The tile text also carries a PG-charges note, so match by substring and skip if it is already ticked.
     - {tool: browser.click, args: {selector: "text=IRCTC iPay New"}, optional: true}
+    - {tool: wait, args: {seconds: 0.5}}
+    - {tool: browser.click, args: {selector: "button.btn-primary:has-text('Pay & Book')"}}
+pay_upi_request:
+  description: "Multiple Payment Service -> gateway (default vault booking.gateway, e.g. PhonePe) -> visible Pay & Book. Starts the payment. params {gateway}"
+  defaults: {gateway: "{{vault.passenger.booking.gateway}}"}
+  steps:
+    # Verified 24-Oct 22:59: "Multiple Payment Service" lists PhonePe, PayU, Razorpay, Paytm.
+    - {tool: browser.click, args: {selector: "text=Multiple Payment Service"}}
+    - {tool: wait, args: {seconds: 0.8}}
+    - {tool: browser.click, args: {selector: "text={{param.gateway}}"}}
     - {tool: wait, args: {seconds: 0.5}}
     - {tool: browser.click, args: {selector: "button.btn-primary:has-text('Pay & Book')"}}
 upi_qr_pay:
