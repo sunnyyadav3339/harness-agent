@@ -15,6 +15,9 @@ guards:
   - name: no_payment_macro_in_rehearsal
     when: {task_contains: "REHEARSAL", macro: "pay_and_book"}
     block: "This is a REHEARSAL: never start payment. Stop now with task.done (REHEARSAL, NOT BOOKED)."
+  - name: no_qr_payment_in_rehearsal
+    when: {task_contains: "REHEARSAL", macro: "upi_qr_pay"}
+    block: "This is a REHEARSAL: never start payment. Stop now with task.done (REHEARSAL, NOT BOOKED)."
   - name: no_credit_upi
     when: {url_contains: "irctcpayments.com", click_text: "UPI (CC/CL)"}
     block: "UPI (CC/CL) is UPI on credit cards/lines, not a UPI-ID collect. BHIM/UPI was not selected on the passenger form: click Cancel on this gateway and fix the payment mode."
@@ -127,9 +130,11 @@ Close any popup: for the language dialog click "English"; for alerts click OK or
 - On the gateway (`pg.irctcpayments.com`), never choose "UPI (CC/CL)": that is UPI on credit cards/lines, not a
   UPI-ID collect. If only Cards / Net Banking / UPI (CC/CL) are offered, BHIM/UPI was not selected on the passenger
   form: click the gateway's "Cancel", go back and fix the payment mode.
-- Not yet verified (read the screen): with BHIM/UPI mode, choose the option to pay by UPI ID / VPA, type
-  `{{secret.UPI_ID}}`, and click Pay to send the collect request.
-- Immediately call `human.ask(question="Approve the UPI collect request of ₹<fare> for <train> <class> on your phone", options=["Paid", "Cancel"], reason="payment", wait_for={"text": "PNR"}, timeout_s=420)`. The run resumes on its own when the confirmation page shows a PNR.
+- Verified 24-Oct 22:42: in UPI mode the gateway ("Complete Your Payment", total ₹86.80) offers ONLY a UPI section
+  with "Click Here To Pay Using QR" and a Pay Now button that stays disabled until that option is selected. There is
+  no UPI-ID / collect field. Run `skill.run_macro upi_qr_pay` (selects the QR option, clicks Pay Now, so the QR
+  code is displayed). Never ask the human to operate the page: their only job is to approve the payment.
+- Immediately after the QR is shown, call `human.ask(question="Scan the QR on the screen (or in this photo) with your UPI app and approve ₹<fare> for <train> <class>", options=["Paid", "Cancel"], reason="payment", wait_for={"text": "PNR"}, timeout_s=420)`. The handoff photo shows the QR; the run resumes by itself when the confirmation page shows a PNR.
 
 **STATE_CONFIRMATION**:
 - Wait for the booking confirmation with PNR and status (CNF/AVL). Read the PNR (browser.read).
@@ -194,9 +199,19 @@ book_now:
 pay_and_book:
   description: "select the 'IRCTC iPay New' gateway tile, then click the visible Pay & Book (starts the payment)"
   steps:
-    - {tool: browser.click, args: {text: "IRCTC iPay New"}}
+    # The tile text also carries a PG-charges note, so match by substring and skip if it is already ticked.
+    - {tool: browser.click, args: {selector: "text=IRCTC iPay New"}, optional: true}
     - {tool: wait, args: {seconds: 0.5}}
     - {tool: browser.click, args: {selector: "button.btn-primary:has-text('Pay & Book')"}}
+upi_qr_pay:
+  description: "on the gateway (pg.irctcpayments.com, UPI mode): select 'Click Here To Pay Using QR', then click Pay Now to show the QR"
+  steps:
+    # Verified 24-Oct: in UPI mode the gateway offers only a QR option (no UPI-ID field). Pay Now stays disabled
+    # until the QR radio (label for="qr-click") is selected; a hidden 'open app' radio exists too, so target the label.
+    - {tool: browser.click, args: {selector: "label[for=qr-click]"}}
+    - {tool: wait, args: {seconds: 0.5}}
+    - {tool: browser.click, args: {selector: "button:has-text('Pay Now')"}}
+    - {tool: wait, args: {seconds: 2}}
 verify_passenger:
   description: "check passenger 1's name, age and gender on the form against the vault; fails on any mismatch"
   steps:
@@ -294,3 +309,4 @@ fill_passenger:
 - The payment page holds three hidden mobile copies of "Pay & Book" before the visible `button.btn-primary`; text clicks used to hit a hidden copy and time out (verified 24-Oct; the harness now prefers visible matches). Use pay_and_book.
 - [Auto-learned 2026-10-24 22:37 IST]: After filling the passenger form, click the first Continue button, then wait for the URL to contain "/booking/reviewBooking" before clicking the second Continue to reach the payment page.
 - [Auto-learned 2026-10-24 22:37 IST]: If a modal overlay (e.g., concession warning) appears on the passenger form, dismiss it with Escape or its 'OK' button before clicking Continue, then wait for any 'Please Wait...' overlay to disappear before proceeding.
+- [Auto-learned 2026-10-24 22:44 IST]: On the IRCTC payment page, locate the visible 'Pay & Book' button using a selector that filters hidden elements, e.g. `button.btn-primary:visible` or `button:has-text("Pay & Book"):visible`, and click it only after confirming it is not hidden or overlapped.
