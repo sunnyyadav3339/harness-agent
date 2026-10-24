@@ -225,6 +225,11 @@ async def _locate(ctx, id=None, selector=None, text=None):
         snap = ctx.browser_snapshot
         el = snap.by_id(int(id)) if snap else None
         if el is None:
+            # A long number is usually the page's own DOM id (IRCTC uses random numeric ids) mistaken for an
+            # observation id: use it if such an element exists.
+            dom = page.locator(f"[id='{int(id)}']")
+            if await dom.count():
+                return page, dom.first, None
             raise LookupError(f"element [{id}] is not in the latest observation; re-observe and use a current id")
         frame = el.frame or page.main_frame
         return page, frame.locator(f'[data-agent-id="{int(id)}"]').first, el

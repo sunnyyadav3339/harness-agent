@@ -78,13 +78,11 @@ async def _llm_read(ctx, png: bytes) -> str | None:
       "id=None, selector=None, region=None, verify=true", timeout_s=30)
 async def read_text(ctx, id=None, selector=None, region=None, verify: bool = True) -> ToolResult:
     if id is not None or selector:
-        page = await ctx.browser.page()
-        if id is not None:
-            el = ctx.browser_snapshot.by_id(int(id)) if ctx.browser_snapshot else None
-            frame = el.frame if el and el.frame else page.main_frame
-            loc = frame.locator(f'[data-agent-id="{int(id)}"]').first
-        else:
-            loc = page.locator(selector).first
+        from .browser import _locate  # same lookup as clicks: observation id, DOM id fallback, visible-first
+
+        _, loc, _ = await _locate(ctx, id, selector)
+        if not await loc.count():
+            return ToolResult(False, error="no such image on the page")
         png = await loc.screenshot(type="png", timeout=5000)
     elif region:
         scale = ctx.desktop_scale or 1.0
@@ -114,3 +112,22 @@ async def read_text(ctx, id=None, selector=None, region=None, verify: bool = Tru
         return ToolResult(True, f"text={local!r} (local OCR); vision model read {remote!r}. "
                                 f"If one is rejected, try the other.", data={"text": local, "alt": remote})
     return ToolResult(True, f"text={local!r} (local OCR only)", data={"text": local})
+
+
+@tool("vision.ocr_into", "Read the text in an image element (e.g. a captcha) with local OCR and type it straight into "
+      "an input, in one step (no copying text between steps).",
+      "image_selector=None, image_id=None, input_selector=None, input_id=None, verify=false", timeout_s=40)
+async def ocr_into(ctx, image_selector=None, image_id=None, input_selector=None, input_id=None,
+                   verify: bool = False) -> ToolResult:
+    read = await read_text(ctx, id=image_id, selector=image_selector, verify=verify)
+    if not read.ok:
+        return read
+    text = read.data.get("text", "")
+    if not text:
+        return ToolResult(False, error="OCR read nothing: refresh the image and try again")
+    from .browser import browser_type
+
+    typed = await browser_type(ctx, text=text, id=input_id, selector=input_selector, slow=True)
+    alt = f"; vision model read {read.data['alt']!r}" if read.data.get("alt") else ""
+    return ToolResult(typed.ok, f"read {text!r} and typed it{alt}", error=typed.error, point=typed.point,
+                      data={"text": text})

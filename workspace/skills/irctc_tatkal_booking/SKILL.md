@@ -9,6 +9,11 @@ max_steps: 140
 busy_selectors: ["div.loader-container", "#loaderP", ".my-loading", ".ui-blockui", "app-loader"]
 # Enforced by the harness before every matching action (also inside macros), not left to the model.
 guards:
+  # The problem statement allows one human action: approving the payment. Everything else is the agent's job
+  # (the harness's own "stuck" handoff after repeated failed self-recovery is not a human.ask call).
+  - name: human_only_for_payment
+    when: {tool: human.ask, args_lack: "payment"}
+    block: "The human only approves the payment. Solve this yourself: re-observe and follow the skill's recovery steps (login problems: login_fresh / login_captcha; captchas: vision.ocr_into; popups: close them; error page: Click here to login)."
   - name: no_payment_in_rehearsal
     when: {task_contains: "REHEARSAL", click_text: "Pay & Book"}
     block: "This is a REHEARSAL: never click Pay & Book. Stop now with task.done (REHEARSAL, NOT BOOKED)."
@@ -111,17 +116,23 @@ Close any popup: for the language dialog click "English"; for alerts click OK or
 
 **STATE_LOGIN** (start no earlier than ~4 minutes before the window; sessions idle out):
 - If the header shows "Welcome <name> (<user id>)" and "MY ACCOUNT", you are logged in; skip ahead.
-- If login cannot be completed by you (e.g. a credential secret is not configured), call
-  `human.ask(question="Please log in to IRCTC in the agent's browser window; the run continues by itself once you are in.",
-  options=["Done", "Cancel"], reason="login", wait_for={"text": "MY ACCOUNT"}, timeout_s=600)`. Never ask for the password itself.
-- `skill.run_macro login_fill`: it fills both fields, clicks SIGN IN and waits for the dialog to close.
-  Verified 24-Oct-2026: the login dialog has NO captcha (username, password, SIGN IN), and SIGN IN logs straight in.
+- `skill.run_macro login_fill`: it fills both fields, solves the captcha if one is shown (local OCR typed straight
+  into the captcha box), clicks SIGN IN and waits for the dialog to close.
+  Verified 24-Oct-2026: the dialog first had NO captcha; after several logins it shows one, and SIGN IN with an
+  empty or wrong captcha answers "Invalid Request" / "Invalid Captcha".
+- **Logging in is your job, captcha included.** If login_fill fails with the dialog still open:
+  - "Invalid Request" and NO captcha image in the dialog (verified 24-Oct 23:45: a stale page session, e.g. the run
+    started on a leftover `/nget/error` page): run `skill.run_macro login_fresh` (reloads the search page, opens the
+    dialog again and logs in). Up to 3 times.
+  - A captcha image is shown, or "Invalid Captcha": run `skill.run_macro login_captcha` (refreshes the image,
+    re-types the password, OCRs the captcha into its box, SIGN IN), up to 3 times. If a selector in it finds nothing,
+    use `vision.ocr_into(image_id=<captcha image id>, input_id=<captcha input id>)`, then click SIGN IN.
+  - Only claim a captcha exists if the observation lists an image in the login dialog. The password box is not one.
+- Never ask the human to log in, or for a password or captcha: the harness blocks any human.ask that is not the
+  payment approval. If a credential secret is missing, stop with task.fail and say which one.
 - The small icon inside the password field is a show-password toggle: **never click it** (it puts the password
   on screen and in the recording). Never tick "Visually impaired users may select this option to receive OTP
   instead of CAPTCHA"; it is an accessibility option, not ours to use.
-- Only if login_fill fails because a captcha image has appeared: read it with `vision.read_text(id=<that image id>)`,
-  type it into the captcha input and click SIGN IN. On "Invalid Captcha", click the refresh icon next to the image
-  and read it again. Never ask the human for a captcha.
 
 **STATE_SEARCH_STAGING** (before the window opens):
 - `skill.run_macro stage_search`. Then verify on screen that From shows ROORKEE - RK, To shows HARIDWAR JN. - HW, the date is `journey.date` and the quota is TATKAL. Fix any field by id if it is wrong.
@@ -205,7 +216,7 @@ Close any popup: for the language dialog click "English"; for alerts click OK or
 - "Unable to process current transaction", "Something went wrong" or an HTTP error toast: close the toast and repeat the last click after 1 s, up to 5 times.
 - Logged out mid-flow (login dialog reappears or the URL has /error): log in again (STATE_LOGIN), then return to the train list via Search with the same staged values.
 - Chosen option turns WL/TQWL/REGRET before payment: go back and take the next cheapest AVL option from your notes.
-- Payment page error or timeout before the human approved: retry the UPI collect once; if it fails again, human.ask whether to retry with the QR code.
+- Payment page error or timeout before the human approved: retry pay_upi_request once; if it fails again, use the fallback gateway (IRCTC iPay QR) and ask for approval with reason="payment".
 - Any unexpected modal: read it, and if it is informational, close it and continue.
 
 ## Fast-path macros
@@ -217,8 +228,32 @@ login_fill:
     - {tool: browser.wait_for, args: {selector: "input[formcontrolname=userid]", timeout_s: 8}}
     - {tool: browser.type, args: {selector: "input[formcontrolname=userid]", text: "{{secret.IRCTC_USERNAME}}"}}
     - {tool: browser.type, args: {selector: "input[formcontrolname=password]", text: "{{secret.IRCTC_PASSWORD}}"}}
+    # Skipped (fast) when the dialog shows no captcha image.
+    - {tool: vision.ocr_into, args: {image_selector: "app-login .captcha-img, app-login img[src^='data:image']", input_selector: "app-login input[formcontrolname=captcha], app-login #captcha, app-login input[placeholder*='aptcha']"}, optional: true}
     - {tool: browser.click, args: {selector: "app-login button:has-text('SIGN IN')"}}
-    # Fails (and hands control back to you) if the dialog stays open, e.g. a captcha appeared.
+    # Fails (and hands control back to you) if the dialog stays open, e.g. a wrong captcha.
+    - {tool: browser.wait_for, args: {selector: "input[formcontrolname=userid]", gone: true, timeout_s: 15}}
+login_fresh:
+  description: "retry a login refused with 'Invalid Request': reload the search page (new session), dismiss the language prompt, then run the login_fill steps"
+  steps:
+    - {tool: browser.open, args: {url: "https://www.irctc.co.in/nget/train-search"}}
+    - {tool: browser.wait_for, args: {text: "LOGIN", timeout_s: 15}}
+    - {tool: browser.click, args: {selector: ".ui-dialog button:has-text('English'), p-dialog button:has-text('English')"}, optional: true}
+    - {tool: browser.click, args: {selector: "a:has-text('LOGIN')"}}
+    - {tool: browser.wait_for, args: {selector: "input[formcontrolname=userid]", timeout_s: 8}}
+    - {tool: browser.type, args: {selector: "input[formcontrolname=userid]", text: "{{secret.IRCTC_USERNAME}}"}}
+    - {tool: browser.type, args: {selector: "input[formcontrolname=password]", text: "{{secret.IRCTC_PASSWORD}}"}}
+    - {tool: vision.ocr_into, args: {image_selector: "app-login .captcha-img, app-login img[src^='data:image']", input_selector: "app-login input[formcontrolname=captcha], app-login #captcha, app-login input[placeholder*='aptcha']"}, optional: true}
+    - {tool: browser.click, args: {selector: "app-login button:has-text('SIGN IN')"}}
+    - {tool: browser.wait_for, args: {selector: "input[formcontrolname=userid]", gone: true, timeout_s: 15}}
+login_captcha:
+  description: retry a login whose captcha failed - refresh the captcha, re-type the password, OCR the captcha into its box, SIGN IN, wait for the dialog to close
+  steps:
+    - {tool: browser.click, args: {selector: "app-login .glyphicon-repeat, app-login [class*='refresh']"}, optional: true}
+    - {tool: browser.wait_for, args: {selector: "app-login .captcha-img, app-login img[src^='data:image']", timeout_s: 5}}
+    - {tool: browser.type, args: {selector: "input[formcontrolname=password]", text: "{{secret.IRCTC_PASSWORD}}"}}
+    - {tool: vision.ocr_into, args: {image_selector: "app-login .captcha-img, app-login img[src^='data:image']", input_selector: "app-login input[formcontrolname=captcha], app-login #captcha, app-login input[placeholder*='aptcha']"}}
+    - {tool: browser.click, args: {selector: "app-login button:has-text('SIGN IN')"}}
     - {tool: browser.wait_for, args: {selector: "input[formcontrolname=userid]", gone: true, timeout_s: 15}}
 stage_search:
   description: "fill From, To, quota and date on the train-search form; does NOT click Search. params {quota} (default: vault quota)"

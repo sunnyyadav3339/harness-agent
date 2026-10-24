@@ -237,7 +237,8 @@ async def act(state: AgentState) -> dict:
         if name == "human.ask":
             res = await REGISTRY.call(name, args, ctx)
             results.append(res)
-            handoff = {"kind": "ask", **res.data.get("handoff", {})}
+            if res.ok:  # a guard may refuse the ask: then the error goes back to the planner instead
+                handoff = {"kind": "ask", **res.data.get("handoff", {})}
             break
         res = await REGISTRY.call(name, args, ctx)
         results.append(res)
