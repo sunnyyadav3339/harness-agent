@@ -25,6 +25,7 @@ Reply with ONE JSON object and nothing else:
 Rules:
 - verify_previous: judge from the CURRENT observation whether the previous actions achieved their "expect".
 - Use element ids from the CURRENT observation only; ids are reassigned every turn. Prefer ids; use x,y screenshot pixels only when no element fits.
+- Never invent CSS selectors or class names you have not seen (e.g. "button.search-btn"): click by element id, by the exact visible text (text="Search Trains"), or with a selector the skill gives you.
 - Batch 2-6 actions only when the view will not change between them (e.g. fill several fields, then click submit). Otherwise one action.
 - Secrets: never write real credentials. Use placeholders {{secret.NAME}} in args; vault values via {{vault.path}} or copied from the vault. Never make a secret visible on screen (no "show password" eye icons).
 - Accessibility options (e.g. "visually impaired users ... OTP instead of CAPTCHA") are for people who need them: never use them.

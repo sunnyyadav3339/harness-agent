@@ -317,14 +317,18 @@ async def browser_click(ctx, id=None, selector=None, text=None, double: bool = F
 
 
 @tool("browser.type", "Type text into a field. slow=true sends real key events (for autocompletes).",
-      "text, id=None, selector=None, clear=true, enter=false, slow=false")
+      "text, id=None, selector=None, clear=true, enter=false, slow=None")
 async def browser_type(ctx, text: str, id=None, selector=None, clear: bool = True, enter: bool = False,
-                       slow: bool = False) -> ToolResult:
+                       slow: bool | None = None) -> ToolResult:
     page, loc, el = await _locate(ctx, id, selector)
     before = page.url
     await loc.click(timeout=4000)
     if clear:
         await loc.fill("", timeout=4000)
+    # Default to real keystrokes for short text: framework widgets (date pickers, autocompletes) often ignore a
+    # programmatic fill and clear it on blur (verified on IRCTC's p-calendar). Long text is filled for speed.
+    if slow is None:
+        slow = len(text) <= 60
     if slow:
         await loc.press_sequentially(text, delay=45, timeout=15000)
     else:

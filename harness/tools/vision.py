@@ -75,7 +75,7 @@ async def _llm_read(ctx, png: bytes) -> str | None:
 
 @tool("vision.read_text", "OCR the text inside an image element (browser id/selector) or a screen region [x,y,w,h]. "
       "Runs locally; cross-checks with the vision model when verify=true.",
-      "id=None, selector=None, region=None, verify=true", timeout_s=20)
+      "id=None, selector=None, region=None, verify=true", timeout_s=30)
 async def read_text(ctx, id=None, selector=None, region=None, verify: bool = True) -> ToolResult:
     if id is not None or selector:
         page = await ctx.browser.page()
@@ -96,11 +96,16 @@ async def read_text(ctx, id=None, selector=None, region=None, verify: bool = Tru
         return ToolResult(False, error="give id, selector or region")
 
     prepared = _prep(png)
-    local_task = asyncio.to_thread(lambda: _engine().classification(prepared))
-    if verify:
-        local, remote = await asyncio.gather(local_task, _llm_read(ctx, png))
-    else:
-        local, remote = await local_task, None
+    # Local OCR is the answer; the vision model is only a bounded cross-check. Verified 24-Oct: with a slow
+    # model (8-14 s) the old unbounded cross-check made the whole tool time out on the IRCTC login captcha.
+    remote_task = asyncio.create_task(_llm_read(ctx, png)) if verify else None
+    local = await asyncio.to_thread(lambda: _engine().classification(prepared))
+    remote = None
+    if remote_task is not None:
+        try:
+            remote = await asyncio.wait_for(remote_task, timeout=6)
+        except (asyncio.TimeoutError, Exception):
+            remote = None
     local = re.sub(r"\s+", "", local or "")
     remote = re.sub(r"\s+", "", remote) if remote else None
     if remote and remote == local:
