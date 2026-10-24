@@ -1,0 +1,47 @@
+[project]
+name = "agenticps-harness"
+version = "0.1.0"
+description = "One generic computer-use agent harness, many skills."
+requires-python = ">=3.12"
+dependencies = [
+    "langgraph>=1.2",
+    "langgraph-checkpoint-sqlite>=3.1",
+    "aiosqlite>=0.22",
+    "httpx>=0.28",
+    "pydantic>=2.10",
+    "pydantic-settings>=2.6",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0",
+    "patchright>=1.50",
+    "pyautogui>=0.9.54",
+    "pywinauto>=0.6.9",
+    "pywin32>=306; sys_platform == 'win32'",
+    "mss>=10.0",
+    "pillow>=10.4",
+    "ddddocr>=1.5",
+    "apscheduler>=3.11,<4",
+    "ntplib>=0.4",
+    "keyring>=25",
+    "pynput>=1.7",
+    "tzdata>=2024.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.24"]
+
+[project.scripts]
+harness = "harness.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["harness*"]
+
+[tool.setuptools.package-data]
+harness = ["perception/*.js", "runlog/*.html"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

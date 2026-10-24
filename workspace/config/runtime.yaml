@@ -1,0 +1,3 @@
+# Per-run behaviour (read at the start of every run).
+record_screen: true   # ffmpeg desktop capture into runs/<id>/video/
+record_fps: 10

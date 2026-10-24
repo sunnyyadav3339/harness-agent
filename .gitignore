@@ -1,0 +1,19 @@
+# secrets
+.env
+*.secret
+
+# python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# runtime output (lives in the workspace, synced separately)
+workspace/runs/
+workspace/state/
+workspace/skills/**/history/
+logs/
+
+# personal data stays local (template: workspace/data/passenger.example.yaml)
+workspace/data/passenger.yaml

@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Run Replay</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --ink: #1b1f24; --muted: #5d6673; --line: #dfe3e8;
+    --accent: #2459d6; --ok: #1d7f45; --bad: #c0362c; --warn: #a86400; --sel: #e8eefc;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111418; --panel: #1a1e24; --ink: #e8ebef; --muted: #98a2ae; --line: #2c323a;
+            --accent: #7aa2ff; --ok: #4cc583; --bad: #ff7a6e; --warn: #f0b350; --sel: #232c3d; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); }
+  header { padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { margin: 0 0 4px; font-size: 17px; }
+  .meta { color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px 18px; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; border: 1px solid currentColor; }
+  .done { color: var(--ok); } .failed, .error, .cancelled { color: var(--bad); } .running, .handoff { color: var(--warn); }
+  main { display: grid; grid-template-columns: 300px 1fr; min-height: calc(100vh - 70px); }
+  nav { border-right: 1px solid var(--line); overflow-y: auto; max-height: calc(100vh - 70px); background: var(--panel); }
+  nav button { display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: none; color: inherit; padding: 8px 12px; cursor: pointer; font: inherit; }
+  nav button.active { background: var(--sel); }
+  nav .t { color: var(--muted); font-size: 12px; }
+  nav .a { font-family: ui-monospace, Consolas, monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  section { padding: 16px 20px; overflow-x: hidden; }
+  .shot { position: relative; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #000; }
+  .shot img { display: block; width: 100%; height: auto; }
+  .controls { display: flex; gap: 8px; align-items: center; margin: 10px 0; flex-wrap: wrap; }
+  .controls button { border: 1px solid var(--line); background: var(--panel); color: inherit; padding: 4px 10px; border-radius: 5px; cursor: pointer; font: inherit; }
+  .controls button.on { border-color: var(--accent); color: var(--accent); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 14px; margin-top: 12px; }
+  .card h3 { margin: 0 0 6px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: 12px/1.5 ui-monospace, Consolas, monospace; }
+  .res-ok { color: var(--ok); } .res-bad { color: var(--bad); }
+  video { width: 100%; max-height: 60vh; background: #000; border-radius: 6px; }
+  @media (max-width: 760px) {
+    main { grid-template-columns: 1fr; }
+    nav { max-height: 220px; border-right: 0; border-bottom: 1px solid var(--line); }
+    section { padding: 12px 16px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="task"></h1>
+  <div class="meta" id="meta"></div>
+</header>
+<main>
+  <nav id="list"></nav>
+  <section id="detail"></section>
+</main>
+<script>
+const DATA = /*__RUN_DATA__*/null;
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const meta = DATA.meta || {};
+const items = DATA.records.filter((r) => r.type === "step" || ["handoff", "handoff_resolved", "error", "finished", "started", "reflection"].includes(r.event));
+let current = 0, view = "annotated";
+
+document.getElementById("task").textContent = meta.task || "Run";
+const dur = meta.started && meta.finished ? ((new Date(meta.finished.utc) - new Date(meta.started.utc)) / 1000).toFixed(1) + " s" : "";
+document.getElementById("meta").innerHTML = [
+  `<span class="badge ${esc(meta.status)}">${esc(meta.status)}</span>`,
+  `run ${esc(meta.run_id)}`, meta.skill ? `skill <b>${esc(meta.skill)}</b>` : "zero-shot",
+  `trigger ${esc(meta.trigger)}`, `${meta.steps || 0} steps`, `${meta.handoffs || 0} handoffs`,
+  meta.started ? `started ${esc(meta.started.ist)}` : "", dur ? `duration ${dur}` : "",
+].filter(Boolean).map((x) => `<span>${x}</span>`).join("");
+
+function label(r) {
+  if (r.type === "step") {
+    const acts = (r.actions || []).map((a) => a.tool).join(", ") || "(no action)";
+    return `<div class="t">#${r.step} · ${esc((r.ist || "").slice(11, 23))} · ${esc(r.phase || "")}</div><div class="a">${esc(acts)}</div>`;
+  }
+  return `<div class="t">${esc((r.ist || "").slice(11, 23))}</div><div class="a"><b>${esc(r.event)}</b> ${esc(r.question || r.status || r.message || "")}</div>`;
+}
+
+function render() {
+  const list = document.getElementById("list");
+  list.innerHTML = items.map((r, i) => `<button class="${i === current ? "active" : ""}" data-i="${i}">${label(r)}</button>`).join("")
+    + (DATA.videos.length ? `<button data-i="video"><div class="a"><b>Screen recording</b> (${DATA.videos.length} segment${DATA.videos.length > 1 ? "s" : ""})</div></button>` : "");
+  list.querySelectorAll("button").forEach((b) => b.onclick = () => { current = b.dataset.i === "video" ? "video" : +b.dataset.i; render(); });
+  const d = document.getElementById("detail");
+  if (current === "video") {
+    d.innerHTML = DATA.videos.map((v) => `<div class="card"><h3>${esc(v)}</h3><video controls src="video/${esc(v)}"></video></div>`).join("");
+    return;
+  }
+  const r = items[current];
+  if (!r) { d.innerHTML = "<p>No steps recorded.</p>"; return; }
+  let html = "";
+  if (r.type === "step") {
+    const img = (r.images || {})[view] || (r.images || {}).annotated || (r.images || {}).screen;
+    html += `<div class="controls">
+      <button id="prev">◀ Prev</button><button id="next">Next ▶</button>
+      ${["annotated", "screen"].filter((k) => (r.images || {})[k]).map((k) => `<button class="${k === view ? "on" : ""}" data-v="${k}">${k === "annotated" ? "Agent view + action" : "Full screen"}</button>`).join("")}
+      <span style="color:var(--muted)">${esc(r.surface || "")} · ${esc(r.model || "")} ${r.llm_ms ? "· " + r.llm_ms + " ms LLM" : ""}</span></div>`;
+    if (img) html += `<div class="shot"><img src="${esc(img)}" alt="step ${r.step}"></div>`;
+    html += `<div class="card"><h3>Where</h3><pre>${esc(r.location || "")}</pre></div>`;
+    html += `<div class="card"><h3>Reasoning</h3><pre>${esc(r.thought || "")}</pre>${r.verify_previous ? `<pre style="color:var(--muted)">check of previous step: ${esc(r.verify_previous)}</pre>` : ""}</div>`;
+    html += `<div class="card"><h3>Actions</h3><pre>${(r.actions || []).map((a, i) => {
+      const res = (r.results || [])[i];
+      const cls = res ? (res.ok ? "res-ok" : "res-bad") : "";
+      return `${esc(a.tool)}(${esc(JSON.stringify(a.args || {}))})\n  <span class="${cls}">→ ${esc(res ? res.summary : "not executed")}${res && res.ms != null ? "  [" + res.ms + " ms]" : ""}</span>`;
+    }).join("\n")}</pre></div>`;
+    if (r.expect) html += `<div class="card"><h3>Expected next</h3><pre>${esc(r.expect)}</pre></div>`;
+    if (r.verification) html += `<div class="card"><h3>Verification</h3><pre>${esc(r.verification)}</pre></div>`;
+  } else {
+    html += `<div class="controls"><button id="prev">◀ Prev</button><button id="next">Next ▶</button></div>`;
+    if (r.image) html += `<div class="shot"><img src="${esc(r.image)}" alt=""></div>`;
+    html += `<div class="card"><h3>${esc(r.event)}</h3><pre>${esc(JSON.stringify(r, null, 2))}</pre></div>`;
+  }
+  d.innerHTML = html;
+  d.querySelectorAll("[data-v]").forEach((b) => b.onclick = () => { view = b.dataset.v; render(); });
+  const prev = document.getElementById("prev"), next = document.getElementById("next");
+  if (prev) prev.onclick = () => { current = Math.max(0, current - 1); render(); };
+  if (next) next.onclick = () => { current = Math.min(items.length - 1, current + 1); render(); };
+}
+document.addEventListener("keydown", (e) => {
+  if (current === "video") return;
+  if (e.key === "ArrowDown" || e.key === "ArrowRight") { current = Math.min(items.length - 1, current + 1); render(); }
+  if (e.key === "ArrowUp" || e.key === "ArrowLeft") { current = Math.max(0, current - 1); render(); }
+});
+render();
+</script>
+</body>
+</html>

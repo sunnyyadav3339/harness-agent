@@ -1,0 +1,38 @@
+# TEMPLATE: copy to passenger.yaml (git-ignored) and fill it in.
+# Pre-filled, NON-secret booking details (readable by the agent as vault.passenger.*).
+# Credentials and the UPI id are secrets: put them in .env as SECRET_IRCTC_USERNAME,
+# SECRET_IRCTC_PASSWORD, SECRET_UPI_ID (or `python -m harness secret set NAME`).
+# Fill every REPLACE_ME before the rehearsal.
+
+journey:
+  # *_query is typed into the autocomplete; *_label is the exact option to click
+  # (verified on irctc.co.in: typing "HW" lists nothing, and the label has a period).
+  from_code: RK
+  from_query: "ROORKEE"
+  from_label: "ROORKEE - RK"
+  to_code: HW
+  to_query: "HARIDWAR"
+  to_label: "HARIDWAR JN. - HW"
+  # Tatkal books one day ahead; computed fresh at run start (IST).
+  date: "${date+1:%d/%m/%Y}"
+  date_iso: "${date+1:%Y-%m-%d}"
+  quota: TATKAL
+  # Non-AC Tatkal (2S/SL) opens 11:00:00 IST; AC Tatkal opens 10:00:00.
+  window_opens: "11:00:00"
+  # Click Search slightly after the window opens: earlier clicks can hit a
+  # cached "not yet started" response.
+  strike_time: "11:00:00.400"
+
+passenger:
+  name: "REPLACE_ME FULL NAME AS ON ID"
+  age: 21
+  gender: Male            # Male | Female | Transgender
+  berth_preference: "No Preference"
+  nationality: India
+  mobile: "REPLACE_ME"    # 10 digits, as registered on IRCTC
+
+booking:
+  book_only_if_confirmed: true
+  travel_insurance: false  # keeps the ticket cheapest
+  auto_upgradation: false
+  payment: "UPI collect request to the team member's UPI id ({{secret.UPI_ID}})"

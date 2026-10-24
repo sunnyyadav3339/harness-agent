@@ -1,0 +1,33 @@
+# Guard rails. deny = refused outright; confirm = the agent must get a human
+# approval (via the handoff channel) before running it. Regexes, case-insensitive.
+# Approvals are per exact action and per run.
+shell:
+  deny:
+  - '\bformat(\.com)?\s+[a-z]:'
+  - \bdiskpart\b
+  - \bbcdedit\b
+  - \bcipher\s+/w
+  - \breg(\.exe)?\s+delete\s+hk(lm|ey_local_machine)
+  - Remove-Item\b.*\b(C:\\Windows|C:\\Program Files)
+  - \brm\s+-rf\s+/(\s|$)
+  - Set-MpPreference|Disable-WindowsOptionalFeature|netsh\s+advfirewall
+  confirm:
+  - \bRemove-Item\b
+  - \brm\s
+  - \bdel\s
+  - \brmdir\b
+  - \brd\s
+  - \bgit\s+push\b
+  - \bStop-Computer\b
+  - \bRestart-Computer\b
+  - \bshutdown\b
+  - \bStop-Process\b
+  - \btaskkill\b
+  - \bInvoke-WebRequest\b.*-Method\s+(Post|Put|Delete)
+files:
+  deny_write_under:
+  - C:\Windows
+  - C:\Program Files
+  - C:\Program Files (x86)
+  protect_code: true
+  confirm_delete: true

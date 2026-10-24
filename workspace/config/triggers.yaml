@@ -1,0 +1,43 @@
+# Trigger definitions for `python -m harness daemon`. Re-read every 30 s, so
+# schedules can be edited after the code freeze. Times are IST.
+#
+# schedules: one-shot `at: "YYYY-MM-DD HH:MM:SS"` or `cron: "m h dom mon dow"`.
+#   prewarm_s: seconds before `at` to sync NTP, open model connections, attach
+#   Chrome and load OCR, so the run starts hot.
+# email: rules matched against new mail (needs IMAP_* in .env). {subject},
+#   {from}, {body}, {date} are filled from the message.
+
+schedules:
+  # Rehearsal on the AC Tatkal window (opens 10:00): full flow up to the payment
+  # page without paying. Its lessons are written back into the skill before 11:00.
+  - id: tatkal_rehearsal
+    enabled: true
+    at: "2026-10-25 09:57:00"
+    prewarm_s: 120
+    skill: irctc_tatkal_booking
+    priority: 2
+    task: >-
+      REHEARSAL: run the IRCTC Tatkal flow for Roorkee (RK) to Haridwar (HW) for tomorrow, but use the
+      AC window that opens at 10:00:00 (strike at 10:00:00.400) and an AC class (CC) for the test. Go through
+      login, search, class check, passenger form and review, stop on the payment page WITHOUT paying, and
+      report timings and any problems.
+
+  - id: tatkal_book
+    enabled: true
+    at: "2026-10-25 10:56:30"
+    prewarm_s: 150
+    skill: irctc_tatkal_booking
+    priority: 1
+    task: >-
+      Book the cheapest Tatkal ticket from Roorkee (RK) to Haridwar (HW) for tomorrow for the passenger in the
+      vault. Log in now, stage the search, and click Search at the strike time (11:00:00.400 IST). Pick the
+      lowest-fare AVAILABLE option, fill the passenger, pay via UPI collect (the human approves on their phone),
+      and save the PNR proof.
+
+email:
+  # Example: "when an email arrives" trigger for the demo video.
+  - id: demo_report
+    enabled: true
+    subject_contains: "[agent]"
+    task: >-
+      An email arrived from {from} with subject "{subject}". Do what it asks: {body}
