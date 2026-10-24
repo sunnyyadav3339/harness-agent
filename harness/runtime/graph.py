@@ -72,11 +72,16 @@ async def observe(state: AgentState) -> dict:
     ctx = _ctx(state)
     t0 = time.perf_counter()
     surface = _choose_surface(state, ctx)
+    browser_note = ""
     if surface == "browser":
+        # A hung renderer makes CDP calls wait forever; never let that freeze the run.
+        # Cold start (launch + attach) gets longer than a routine observation.
+        limit = 20 if ctx.browser.connected else 60
         try:
             screen_task = asyncio.to_thread(grab)
             busy = ctx.skill.busy_selectors if ctx.skill else None
-            snap, ctx.screen_image = await asyncio.gather(observe_browser(ctx, busy), screen_task)
+            snap, ctx.screen_image = await asyncio.wait_for(
+                asyncio.gather(observe_browser(ctx, busy), screen_task), timeout=limit)
             ctx.browser_snapshot = snap
             img = snap.annotated()
             if img is not None:
@@ -86,7 +91,11 @@ async def observe(state: AgentState) -> dict:
                 ctx.model_image = None
             ctx.observation_text = snap.describe()
         except Exception as exc:
-            log.warning("browser observation failed (%s); falling back to desktop", exc)
+            reason = f"no response within {limit}s" if isinstance(exc, asyncio.TimeoutError) else str(exc)[:200]
+            log.warning("browser observation failed (%s); falling back to desktop", reason)
+            browser_note = (f"\nWARNING: the automated Chrome could not be observed ({reason}). The page may be stuck "
+                            "loading or the browser may be broken: try browser.reload or browser.open on the URL again; "
+                            "if that keeps failing, ask the human.")
             surface = "desktop"
     if surface == "desktop":
         snap = await desktop_view.snapshot()
@@ -94,8 +103,8 @@ async def observe(state: AgentState) -> dict:
         ctx.screen_image = snap.image
         img = snap.annotated()
         ctx.model_image, ctx.desktop_scale = fit(img, 1280, 1280) if img is not None else (None, 1.0)
-        text = snap.describe()
-        if ctx.browser.connected:
+        text = snap.describe() + browser_note
+        if ctx.browser.connected and not browser_note:
             try:
                 page = await ctx.browser.page()
                 text += f"\n(Automated Chrome is open at {page.url}; use browser.* tools or browser.focus for web pages.)"
@@ -245,8 +254,11 @@ async def act(state: AgentState) -> dict:
         if not res.ok:
             break
         nxt = actions[i + 1] if i + 1 < len(actions) else None
-        if res.changed_view and nxt and "id" in (nxt.get("args") or {}):
-            results.append(ToolResult(False, error="skipped: the view changed, so later element ids were stale"))
+        # After a navigation the rest of the batch was planned against a page that no longer
+        # exists (dialogs reappear, ids are stale): stop and look again. Pure waits may continue.
+        if res.changed_view and nxt and nxt.get("tool") not in ("wait", "clock.wait_until", "browser.wait_for"):
+            results.append(ToolResult(False, error="skipped: the page changed, so the rest of the batch was "
+                                                   "re-planned from a fresh observation"))
             break
 
     # ---- deterministic verification
@@ -313,6 +325,10 @@ async def act(state: AgentState) -> dict:
         "observe_ms": ctx.observe_ms,
         "images": {k: v for k, v in images.items() if v},
     })
+    # One readable line per step on the console / log file, so a live run can be followed.
+    log.info("step %d [%s] %s | %s", step, p.get("phase", ""), llm.get("deployment") or "no-model",
+             "; ".join(f"{a['tool']} -> {'OK' if r.ok else 'ERR ' + (r.error or '')[:120]}"
+                       for a, r in zip(actions, results)) or "(no action)")
 
     update: dict = {
         "step": step,

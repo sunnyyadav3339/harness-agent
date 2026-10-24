@@ -26,10 +26,20 @@ quota, fare). Nothing is booked until a PNR is shown, so never use the word "boo
 - Speed matters after the window opens: batch actions when safe, use macros, keep thoughts short.
 
 ## Phase plan
-**STATE_HOME**: browser.open `https://www.irctc.co.in/nget/train-search`. Close any popup: for the language dialog click "English"; for alerts click OK or the ×.
+**STATE_HOME**: if the tab is not on irctc.co.in yet, browser.open `https://www.irctc.co.in/nget/train-search`.
+Close any popup: for the language dialog click "English"; for alerts click OK or the ×.
+- **Order matters (verified 24-Oct-2026): log in BEFORE clicking Search Trains.** A train list loaded while
+  logged out, followed by a login, sends the next class/Book Now click to the `/nget/error` page.
+- **Never browser.open / reload an IRCTC URL while logged in**: IRCTC treats it as Back/Refresh and shows
+  `/nget/error` ("Sorry!!! Please Try again!!"). To get back to the search form, use the site's own
+  navigation (IRCTC logo, or TRAINS → BOOK TICKET).
+- On `/nget/error`: click "Click here to login." and restart from STATE_LOGIN (login → stage → search).
 
 **STATE_LOGIN** (start no earlier than ~4 minutes before the window; sessions idle out):
-- If the header shows "Welcome <name> (<user id>)", you are logged in; skip ahead.
+- If the header shows "Welcome <name> (<user id>)" and "MY ACCOUNT", you are logged in; skip ahead.
+- If login cannot be completed by you (e.g. a credential secret is not configured), call
+  `human.ask(question="Please log in to IRCTC in the agent's browser window; the run continues by itself once you are in.",
+  options=["Done", "Cancel"], reason="login", wait_for={"text": "MY ACCOUNT"}, timeout_s=600)`. Never ask for the password itself.
 - `skill.run_macro login_fill`: it fills both fields, clicks SIGN IN and waits for the dialog to close.
   Verified 24-Oct-2026: the login dialog has NO captcha (username, password, SIGN IN), and SIGN IN logs straight in.
 - The small icon inside the password field is a show-password toggle: **never click it** (it puts the password
@@ -137,7 +147,10 @@ verify_passenger:
         script: >-
           (() => {
             const q = (s) => document.querySelector(s);
-            const nameEl = q('input[placeholder*=Passenger]') || q('input[formcontrolname=passengerName]') || q('app-passenger p-autocomplete input');
+            // Name = first text field of the passenger block that is not a mobile/phone field and not all digits
+            // (verified 24-Oct: a placeholder match also hit the contact mobile field).
+            const nameEl = q('input[formcontrolname=passengerName]') || Array.from(document.querySelectorAll('app-passenger input'))
+              .find((e) => e.type === 'text' && !/mobile|phone/i.test((e.placeholder || '') + ' ' + (e.getAttribute('formcontrolname') || '')) && !/^\d+$/.test(e.value));
             const ageEl = q('input[formcontrolname=passengerAge]');
             const g = q('select[formcontrolname=passengerGender]');
             const want = {name: '{{vault.passenger.passenger.name}}', age: '{{vault.passenger.passenger.age}}', gender: '{{vault.passenger.passenger.gender}}'};
@@ -166,3 +179,4 @@ fill_passenger:
 - Journey date (p-calendar): type it with real keystrokes (slow=true), then click outside the calendar. A pasted/filled value is cleared on blur, Escape clears it, Enter submits the search early, and the open calendar covers the quota dropdown, so set the quota before the date.
 - Quota dropdown items: select by aria-label (`#journeyQuota li[aria-label='TATKAL']`). Text matching also hits "PREMIUM TATKAL".
 - [Auto-learned 2026-10-24 16:02 IST]: When a modal alert or `<div.dimmer>` covers the passenger form (such as a concession warning), dismiss it by pressing Escape or clicking its 'OK' button before clicking Continue.
+- [Auto-learned 2026-10-24 16:36 IST]: After clicking Continue on the passenger form, wait for the 'Please Wait...' overlay to disappear before checking for 'Review Journey' text.

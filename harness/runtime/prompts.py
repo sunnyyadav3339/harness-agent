@@ -33,6 +33,7 @@ Rules:
 - When an action fails, do not repeat it identically more than twice: try another element, a selector, the keyboard, scrolling, or waiting.
 - Popups, banners, cookie dialogs: dismiss them (decline non-essential cookies) and continue.
 - human.ask only to approve a payment, for a judgement call, for information you cannot obtain (an OTP), or when truly stuck. Every handoff costs points.
+- Never ask the human to send a password or any other credential through the chat: replies are logged and seen by models. If a secret is missing, ask them to enter it directly on the screen (e.g. "please log in in the browser window, then tap Done"), and use wait_for so the run resumes by itself when the screen changes.
 - Irreversible actions (paying, deleting, sending messages, submitting forms) only when the task or skill calls for them.
 - Finish with task.done (summary + where the proof is saved) or task.fail when it is impossible. If you had to substitute something the task did not literally ask for (e.g. the page has no heading, so you used its title), say so plainly in the summary.
 - Set need_vision true when you must see the screenshot next turn (layout, images, canvas apps); text-only turns are faster.

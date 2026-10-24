@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     )
 
     harness_workspace: Path = REPO_ROOT / "workspace"
+    # Machine-local state (checkpoints, IMAP position, heartbeat). Override for tests.
+    harness_state_dir: Path | None = None
 
     gemini_api_keys: str = ""
     groq_api_keys: str = ""
@@ -78,7 +80,12 @@ class Settings(BaseSettings):
     @property
     def state_dir(self) -> Path:
         # Checkpoints are machine-local: SQLite must not sit in a synced folder.
-        return _LOCAL / "agenticps" / "state"
+        return self.harness_state_dir or (_LOCAL / "agenticps" / "state")
+
+    def checkpoint_db(self, run_id: str) -> Path:
+        # One SQLite file per run: concurrent processes (daemon, CLI runs, tests) and a
+        # force-killed run can never corrupt another run's checkpoints.
+        return self.state_dir / "checkpoints" / f"{run_id}.sqlite"
 
     def provider_keys(self, env_name: str) -> list[str]:
         value = os.environ.get(env_name) or getattr(self, env_name.lower(), "") or ""
@@ -88,7 +95,8 @@ class Settings(BaseSettings):
         return set(split_csv(self.telegram_chat_ids))
 
     def ensure_dirs(self) -> None:
-        for d in (self.skills_dir, self.data_dir, self.runs_dir, self.config_dir, self.state_dir):
+        for d in (self.skills_dir, self.data_dir, self.runs_dir, self.config_dir, self.state_dir,
+                  self.state_dir / "checkpoints"):
             d.mkdir(parents=True, exist_ok=True)
 
 

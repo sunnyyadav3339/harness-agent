@@ -198,6 +198,27 @@ async def cmd_replay(args) -> int:
     return 0
 
 
+async def cmd_watch(args) -> int:
+    import time
+
+    from .runlog.watch import follow, latest_run
+
+    runs_dir = get_settings().runs_dir
+    since = time.time()
+    run_dir = None
+    if args.run_id:
+        run_dir = runs_dir / args.run_id
+    else:
+        print("waiting for a new run ..." if args.new else "following the latest run ...", flush=True)
+        while run_dir is None:
+            run_dir = latest_run(runs_dir, since if args.new else None)
+            if run_dir is None:
+                await asyncio.sleep(0.5)
+    print(f"run: {run_dir.name}", flush=True)
+    status = await asyncio.to_thread(follow, run_dir, lambda s: print(s, flush=True))
+    return 0 if status == "done" else 1
+
+
 async def cmd_learn(args) -> int:
     from .skills.demo import record_demo
 
@@ -241,6 +262,11 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("replay", help="rebuild replay.html for a run folder")
     p.add_argument("run_dir")
     p.set_defaults(fn=cmd_replay)
+
+    p = sub.add_parser("watch", help="stream a run's steps, handoffs and result live (readable)")
+    p.add_argument("run_id", nargs="?")
+    p.add_argument("--new", action="store_true", help="wait for the next run that starts")
+    p.set_defaults(fn=cmd_watch)
 
     p = sub.add_parser("learn", help="record a demonstration and draft a skill from it")
     p.add_argument("--name", required=True)

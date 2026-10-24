@@ -68,8 +68,11 @@ class BrowserManager:
             "about:blank",
         ]
         log.info("launching Chrome with CDP on port %s", self.settings.cdp_port)
-        subprocess.Popen(args, creationflags=_DETACHED, close_fds=True,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # Launch through `cmd /c start`: cmd exits at once, so Chrome has no living parent
+        # in our process tree. Stopping a run (Ctrl+C, /stop, taskkill /T) can then never
+        # take Chrome's helper processes down with it and leave a half-dead browser.
+        subprocess.Popen(["cmd.exe", "/d", "/c", "start", "", *args], creationflags=_DETACHED | 0x08000000,
+                         close_fds=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     @property
     def connected(self) -> bool:

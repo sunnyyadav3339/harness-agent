@@ -37,16 +37,17 @@ class ScriptedRouter:
 
 
 class FakeChannel(Channel):
-    def __init__(self):
+    def __init__(self, answer="Yes"):
         super().__init__()
         self.sent, self.asked = [], []
+        self.answer = answer
 
     async def send(self, text, image=None):
         self.sent.append(text)
 
     async def ask(self, question, options, image=None, timeout_s=600):
         self.asked.append(question)
-        return "Yes"
+        return self.answer
 
 
 def _fake_desktop(monkeypatch):
@@ -105,6 +106,17 @@ async def test_end_to_end_run(workspace, tmp_path, monkeypatch):
     assert "file written" in second_prompt and "wrote 10 chars" in second_prompt
     # zero-shot success became a draft skill
     assert (workspace.skills_dir / "write_greeting" / "SKILL.md").exists()
+
+
+async def test_abort_at_stuck_handoff_ends_cleanly(workspace, monkeypatch):
+    """Regression: answering Abort crashed the run with KeyError: 'run_id' (rehearsal 24-Oct 16:16)."""
+    _fake_desktop(monkeypatch)
+    bad = {"thought": "try", "phase": "LOOP", "actions": [{"tool": "file.read", "args": {"path": "Z:/nope.txt"}}]}
+    router = ScriptedRouter([json.dumps(bad)] * 4 + ['{"heuristics": []}'])
+    channel = FakeChannel(answer="Abort")
+    outcome = await Runner(workspace, channel=channel, router=router).run("read a file", trigger="test", record=False)
+    assert outcome.status == "cancelled", outcome.summary
+    assert "cancelled by human" in outcome.summary
 
 
 async def test_repeated_failures_trigger_stuck_handoff(workspace, monkeypatch):

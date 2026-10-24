@@ -150,7 +150,8 @@ class Runner:
                           state.get("handoffs", 0), round(time.time() - started, 1))
 
     async def _drive(self, ctx: RunContext, run_id: str, task: str, skill, trigger: str, resume: bool) -> dict:
-        db = self.settings.state_dir / "checkpoints.sqlite"
+        db = self.settings.checkpoint_db(run_id)
+        db.parent.mkdir(parents=True, exist_ok=True)
         async with AsyncSqliteSaver.from_conn_string(str(db)) as saver:
             graph = build_graph(saver)
             config = {"configurable": {"thread_id": run_id}, "recursion_limit": 100_000}
@@ -194,6 +195,7 @@ class Runner:
             pass
         ctx.run.event("handoff", question=question, options=options, reason=req.get("reason"),
                       wait_for=req.get("wait_for"), image=img_rel)
+        log.info("HANDOFF (%s) waiting up to %.0fs: %s", req.get("reason"), timeout, question[:200])
         t0 = time.time()
 
         tasks: dict[asyncio.Task, str] = {}
@@ -223,6 +225,7 @@ class Runner:
             answer = "Abort"
         waited = round(time.time() - t0, 1)
         ctx.run.event("handoff_resolved", answer=answer, source=source, waited_s=waited)
+        log.info("HANDOFF resolved via %s after %.1fs: %s", source, waited, answer[:100])
         if source == "screen":
             await self._notify(f"👀 Detected on screen, continuing: {req.get('wait_for')}")
         return {"answer": answer, "source": source, "waited_s": waited}
@@ -259,7 +262,7 @@ class Runner:
             log.warning("notify failed: %s", exc)
 
     async def _load_checkpoint(self, run_id: str) -> dict | None:
-        db = self.settings.state_dir / "checkpoints.sqlite"
+        db = self.settings.checkpoint_db(run_id)
         if not db.exists():
             return None
         async with AsyncSqliteSaver.from_conn_string(str(db)) as saver:

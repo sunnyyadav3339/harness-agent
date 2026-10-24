@@ -23,6 +23,20 @@ def test_no_json_raises():
         parse_json_object("no json here")
 
 
+def test_log_lines_are_redacted(monkeypatch, caplog):
+    """Regression: a handoff log line printed the IRCTC username in plain text (rehearsal 24-Oct 16:33)."""
+    import logging
+
+    from harness.logging_setup import _RedactSecrets
+
+    monkeypatch.setenv("SECRET_DEMO_USER", "sourav-demo-42")
+    logger = logging.getLogger("redact-test")
+    logger.addFilter(_RedactSecrets())
+    with caplog.at_level(logging.INFO, logger="redact-test"):
+        logger.info("login dialog open with username %s", "sourav-demo-42")
+    assert "sourav-demo-42" not in caplog.text and "***" in caplog.text
+
+
 def test_secret_resolution_and_redaction(monkeypatch):
     monkeypatch.setenv("SECRET_DEMO_PASS", "hunter2-xyz")
     store = SecretStore()

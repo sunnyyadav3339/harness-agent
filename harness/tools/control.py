@@ -77,8 +77,8 @@ async def run_macro(ctx, name: str, params=None) -> ToolResult:
         log_lines.append(f"{i}. {tool_name} -> {res.summary(limit)}")
         if not res.ok and not step.get("optional"):
             return ToolResult(False, "\n".join(log_lines), error=f"macro '{name}' stopped at step {i}",
-                              point=point, changed_view=True)
-    return ToolResult(True, "\n".join(log_lines), point=point, changed_view=True)
+                              point=point, changed_view=changed)
+    return ToolResult(True, "\n".join(log_lines), point=point, changed_view=changed)
 
 
 @tool("skill.load", "Load another skill's instructions mid-task (to combine jobs).", "name")
