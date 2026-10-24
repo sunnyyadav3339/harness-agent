@@ -174,6 +174,29 @@ class BrowserManager:
 
 # ---------------------------------------------------------------- helpers
 
+# Same guard as the DOM indexer, run right after every click so a "show password"
+# toggle is undone within milliseconds (before the recording or a screenshot sees it).
+_REMASK_JS = """() => {
+  const HINT = /(^|[^a-z])(pass(word|wd)?|pwd)([^a-z]|$)/; let n = 0;
+  for (const el of document.querySelectorAll('input')) {
+    const t = (el.getAttribute('type') || '').toLowerCase();
+    if (t === 'password') { el.dataset.agentPw = '1'; continue; }
+    const h = [el.name, el.id, el.getAttribute('formcontrolname'), el.getAttribute('autocomplete')].join(' ').toLowerCase();
+    if (el.dataset.agentPw === '1' || HINT.test(h)) { el.type = 'password'; el.dataset.agentPw = '1'; n++; }
+  }
+  return n;
+}"""
+
+
+async def _remask(page) -> None:
+    for frame in page.frames[:4]:
+        try:
+            if await frame.evaluate(_REMASK_JS):
+                log.warning("re-masked a revealed password field after a click")
+        except Exception:
+            pass
+
+
 # Returns a short description of whatever covers the element's centre, or null.
 _COVER_JS = """(el, [x, y]) => {
   const hit = document.elementFromPoint(x, y);
@@ -269,6 +292,7 @@ async def browser_click(ctx, id=None, selector=None, text=None, double: bool = F
             return ToolResult(False, error=f"element is covered by {cover}; close that overlay first "
                                            f"(Escape, its close button, or click elsewhere)")
         await page.mouse.click(cx, cy, click_count=2 if double else 1)
+    await _remask(page)
     changed = await _after(page, before)
     label = f"[{id}]" if id is not None else (selector or text)
     return ToolResult(True, f"clicked {label}" + (f"; navigated to {page.url}" if changed else ""),

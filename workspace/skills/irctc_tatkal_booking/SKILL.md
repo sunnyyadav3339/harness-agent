@@ -12,7 +12,11 @@ busy_selectors: ["div.loader-container", "#loaderP", ".my-loading", ".ui-blockui
 
 Journey, passenger and timing come from the vault (`vault.passenger.*`). Credentials and UPI id are
 secrets: type `{{secret.IRCTC_USERNAME}}`, `{{secret.IRCTC_PASSWORD}}`, `{{secret.UPI_ID}}`.
-If the task says REHEARSAL: run every phase but stop on the payment page, without paying, then task.done.
+**The task overrides the vault.** If the task names a quota (e.g. GENERAL), class or date, use it: pass
+`params: {quota: "<QUOTA>"}` to `stage_search`, and never continue with a different quota than the task asked for.
+**REHEARSAL**: run every phase but stop on the payment page. Never click "Pay & Book" in a rehearsal. Then
+task.done with a summary that starts "REHEARSAL, NOT BOOKED: reached the payment page for ..." (train, class,
+quota, fare). Nothing is booked until a PNR is shown, so never use the word "booked" before that.
 
 ## Ground rules
 - Tatkal for 2S/SL opens at `journey.window_opens` (11:00:00 IST); AC classes at 10:00:00. Journey date is `journey.date` (tomorrow).
@@ -25,10 +29,15 @@ If the task says REHEARSAL: run every phase but stop on the payment page, withou
 **STATE_HOME**: browser.open `https://www.irctc.co.in/nget/train-search`. Close any popup: for the language dialog click "English"; for alerts click OK or the ×.
 
 **STATE_LOGIN** (start no earlier than ~4 minutes before the window; sessions idle out):
-- If the header shows the user's name or "Logout", you are logged in; skip ahead.
-- `skill.run_macro login_fill`, then click "SIGN IN".
-- A captcha image may appear in the dialog. Read it with `vision.read_text(id=<captcha image id>)`, type the text into the captcha input, and submit. On "Invalid Captcha", try the alternate reading if one was given, otherwise click the refresh icon next to the image and read it again. Never ask the human for a captcha.
-- Verify the login dialog has closed and the header shows the account.
+- If the header shows "Welcome <name> (<user id>)", you are logged in; skip ahead.
+- `skill.run_macro login_fill`: it fills both fields, clicks SIGN IN and waits for the dialog to close.
+  Verified 24-Oct-2026: the login dialog has NO captcha (username, password, SIGN IN), and SIGN IN logs straight in.
+- The small icon inside the password field is a show-password toggle: **never click it** (it puts the password
+  on screen and in the recording). Never tick "Visually impaired users may select this option to receive OTP
+  instead of CAPTCHA"; it is an accessibility option, not ours to use.
+- Only if login_fill fails because a captcha image has appeared: read it with `vision.read_text(id=<that image id>)`,
+  type it into the captcha input and click SIGN IN. On "Invalid Captcha", click the refresh icon next to the image
+  and read it again. Never ask the human for a captcha.
 
 **STATE_SEARCH_STAGING** (before the window opens):
 - `skill.run_macro stage_search`. Then verify on screen that From shows ROORKEE - RK, To shows HARIDWAR JN. - HW, the date is `journey.date` and the quota is TATKAL. Fix any field by id if it is wrong.
@@ -39,20 +48,31 @@ If the task says REHEARSAL: run every phase but stop on the payment page, withou
 - Each train is a card (`app-train-avl-enq`) titled like "HW JANSHATABDI (12054)" with class tabs such as "Second Sitting (2S)", "Sleeper (SL)" and "AC Chair car (CC)", each showing "Refresh" until clicked.
 - Run `skill.run_macro check_class` with params {train, cls} for each candidate. It clicks the class tab and returns the card text: the date cell shows e.g. "Sun, 25 Oct AVAILABLE-37" and the fare next to Book Now (e.g. "₹ 105"). AVAILABLE-n / AVL-n is bookable; WL, TQWL, REGRET or NOT AVAILABLE is not. task.note every fare and availability seen.
 - Route facts verified 24-Oct-2026: of 15 RK→HW trains, only 12054 HW JANSHATABDI (dep 13:04) and 12055 DDN JANSHTBDI offer 2S. 12054 2S Tatkal showed ₹105. All others are SL/3E/3A/2A/1A/CC/EC, which cost more. So check 2S on 12054 and 12055 first, and book the cheaper one that is AVAILABLE. Only if neither is AVAILABLE, check SL on the SL trains and take the cheapest AVAILABLE, then other classes.
-- Make sure the journey-date cell is selected (click it if Book Now looks disabled), then click "Book Now" on that card (`skill.run_macro book_now` with {train}). Accept any confirmation dialog ("I Agree"/"Yes"/"OK").
+- Do NOT scroll or use the class filter to look for trains: `check_class` finds a card anywhere on the page.
+  Run check_class for 12054 and 12055 in ONE turn (two actions), compare, then book.
+- `skill.run_macro book_now` with {train}: it selects the journey-date cell (`journey.date_card`, e.g. "Mon, 26 Oct")
+  and clicks Book Now. Verified: Book Now does nothing until that date cell is selected. Accept any
+  confirmation dialog ("I Agree"/"Yes"/"OK").
 - "Tatkal booking not yet started" (or similar) means it was clicked too early: wait 600 ms and click the class tab again, up to ~10 times.
 
 **STATE_PASSENGER_FORM**:
 - `skill.run_macro fill_passenger`, then check the screenshot: name, age and gender match the vault; "Book only if confirm berths/seats are allotted" is checked; travel insurance is "No"; payment type is "BHIM/ UPI". Fix anything the macro missed by element id.
-- If the name field opens a saved-passenger suggestion that matches the vault name exactly, picking it is fine.
+- Verified 24-Oct-2026: typing the name shows the saved passenger as a suggestion; clicking the exact vault name
+  fills age, gender and nationality. That is the fastest path.
+- A "Senior Citizen concession not allowed..." alert with a dimmed background can appear. Click its OK by element
+  id from the observation (text matching "OK" hits hidden buttons), then click Continue.
 - Click "Continue".
 
 **STATE_REVIEW**:
-- Verify train, class, date, passenger and total fare. If the status now shows WL/TQWL for a "confirm only" booking, go Back and take the next cheapest AVL option.
-- If a captcha is shown, solve it exactly as for login, then click "Continue".
+- Verify train, class, quota, date, passenger and total fare. If the status now shows WL/TQWL for a "confirm only" booking, go Back and take the next cheapest AVL option.
+- Verified 24-Oct-2026: no captcha on the review page; click "Continue". (If one ever appears, solve it as in STATE_LOGIN.)
 
-**STATE_PAYMENT** (REHEARSAL stops here with task.done):
-- Choose the BHIM/UPI option (e.g. "IRCTC iPay" or "Pay through BHIM/UPI"), choose to pay by UPI ID / VPA, type `{{secret.UPI_ID}}`, and click Pay to send the collect request.
+**STATE_PAYMENT** (REHEARSAL stops here with task.done, without clicking "Pay & Book"):
+- Verified page `/nget/payment/bkgPaymentOptions`: "IRCTC iPay (Credit Card/Debit Card/UPI)" is selected on the
+  left with an "IRCTC iPay New" tile on the right; the summary showed Ticket Fare ₹105 + Convenience Fee ₹17.70
+  = Total ₹122.70 for 12054 2S Tatkal. Click the "IRCTC iPay New" tile, then "Pay & Book".
+- Not yet verified (read the screen): on the iPay gateway choose UPI → pay by UPI ID / VPA, type
+  `{{secret.UPI_ID}}`, and click Pay to send the collect request.
 - Immediately call `human.ask(question="Approve the UPI collect request of ₹<fare> for <train> <class> on your phone", options=["Paid", "Cancel"], reason="payment", wait_for={"text": "PNR"}, timeout_s=420)`. The run resumes on its own when the confirmation page shows a PNR.
 
 **STATE_CONFIRMATION**:
@@ -71,14 +91,18 @@ If the task says REHEARSAL: run every phase but stop on the payment page, withou
 ## Fast-path macros
 ```yaml macros
 login_fill:
-  description: open the login dialog and fill the username and password (you handle the captcha and SIGN IN)
+  description: open the login dialog, fill username + password, click SIGN IN, wait for the dialog to close
   steps:
     - {tool: browser.click, args: {selector: "a:has-text('LOGIN')"}, optional: true}
     - {tool: browser.wait_for, args: {selector: "input[formcontrolname=userid]", timeout_s: 8}}
     - {tool: browser.type, args: {selector: "input[formcontrolname=userid]", text: "{{secret.IRCTC_USERNAME}}"}}
     - {tool: browser.type, args: {selector: "input[formcontrolname=password]", text: "{{secret.IRCTC_PASSWORD}}"}}
+    - {tool: browser.click, args: {selector: "app-login button:has-text('SIGN IN')"}}
+    # Fails (and hands control back to you) if the dialog stays open, e.g. a captcha appeared.
+    - {tool: browser.wait_for, args: {selector: "input[formcontrolname=userid]", gone: true, timeout_s: 15}}
 stage_search:
-  description: fill From, To, date and TATKAL quota on the train-search form; does NOT click Search
+  description: "fill From, To, quota and date on the train-search form; does NOT click Search. params {quota} (default: vault quota)"
+  defaults: {quota: "{{vault.passenger.journey.quota}}"}
   steps:
     - {tool: browser.type, args: {selector: "#origin input", text: "{{vault.passenger.journey.from_query}}", slow: true}}
     - {tool: browser.wait_for, args: {selector: ".ui-autocomplete-items li", timeout_s: 6}}
@@ -87,7 +111,7 @@ stage_search:
     - {tool: browser.wait_for, args: {selector: ".ui-autocomplete-items li", timeout_s: 6}}
     - {tool: browser.click, args: {selector: ".ui-autocomplete-items li:has-text('{{vault.passenger.journey.to_label}}')"}}
     - {tool: browser.click, args: {selector: "#journeyQuota"}}
-    - {tool: browser.click, args: {selector: "#journeyQuota li[aria-label='{{vault.passenger.journey.quota}}']"}}
+    - {tool: browser.click, args: {selector: "#journeyQuota li[aria-label='{{param.quota}}']"}}
     - {tool: browser.type, args: {selector: "#jDate input", text: "{{vault.passenger.journey.date}}", slow: true}}
     - {tool: browser.eval, args: {script: "(() => { document.activeElement && document.activeElement.blur(); document.body.click(); return 'date=' + document.querySelector('#jDate input').value; })()"}}
 check_class:
@@ -98,13 +122,14 @@ check_class:
     - {tool: browser.wait_for, args: {selector: "app-train-avl-enq:has-text('({{param.train}})') :text-matches('AVAILABLE|AVL|WL|REGRET|NOT AVAILABLE|DEPARTED|₹', 'i')", timeout_s: 15}, optional: true}
     - {tool: browser.read, args: {selector: "app-train-avl-enq:has-text('({{param.train}})')", max_chars: 700}}
 book_now:
-  description: "click Book Now on the card of train {train}"
+  description: "select the journey-date cell on train {train}'s card, then click its Book Now"
   steps:
+    - {tool: browser.click, args: {selector: "app-train-avl-enq:has-text('({{param.train}})') div.pre-avl:has-text('{{vault.passenger.journey.date_card}}')"}}
     - {tool: browser.click, args: {selector: "app-train-avl-enq:has-text('({{param.train}})') button:has-text('Book Now')"}}
 fill_passenger:
   description: best-effort fill of passenger 1 + options; verify on screen afterwards
   steps:
-    - {tool: browser.type, args: {selector: "input[formcontrolname=passengerName], app-passenger input[placeholder='Name']", text: "{{vault.passenger.passenger.name}}"}, optional: true}
+    - {tool: browser.type, args: {selector: "input[placeholder='Passenger Name'], input[formcontrolname=passengerName], app-passenger p-autocomplete input", text: "{{vault.passenger.passenger.name}}"}, optional: true}
     - {tool: browser.press, args: {key: Tab}, optional: true}
     - {tool: browser.type, args: {selector: "input[formcontrolname=passengerAge]", text: "{{vault.passenger.passenger.age}}"}, optional: true}
     - {tool: browser.select, args: {selector: "select[formcontrolname=passengerGender]", value: "{{vault.passenger.passenger.gender}}"}, optional: true}
@@ -119,3 +144,4 @@ fill_passenger:
 - Login inputs have random numeric DOM ids; target them by formcontrolname (userid / password).
 - Journey date (p-calendar): type it with real keystrokes (slow=true), then click outside the calendar. A pasted/filled value is cleared on blur, Escape clears it, Enter submits the search early, and the open calendar covers the quota dropdown, so set the quota before the date.
 - Quota dropdown items: select by aria-label (`#journeyQuota li[aria-label='TATKAL']`). Text matching also hits "PREMIUM TATKAL".
+- [Auto-learned 2026-10-24 16:02 IST]: When a modal alert or `<div.dimmer>` covers the passenger form (such as a concession warning), dismiss it by pressing Escape or clicking its 'OK' button before clicking Continue.

@@ -16,6 +16,8 @@ journey:
   # Tatkal books one day ahead; computed fresh at run start (IST).
   date: "${date+1:%d/%m/%Y}"
   date_iso: "${date+1:%Y-%m-%d}"
+  # How the train list labels the date cell (verified: "Sun, 25 Oct").
+  date_card: "${date+1:%a, %d %b}"
   quota: TATKAL
   # Non-AC Tatkal (2S/SL) opens 11:00:00 IST; AC Tatkal opens 10:00:00.
   window_opens: "11:00:00"

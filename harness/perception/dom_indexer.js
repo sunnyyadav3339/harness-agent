@@ -14,6 +14,15 @@
   for (const el of document.querySelectorAll('[data-agent-id]')) {
     el.removeAttribute('data-agent-id');
   }
+  // Never let a revealed password reach a screenshot, recording or model:
+  // re-mask any password field a "show password" toggle switched to text.
+  const PW_HINT = /(^|[^a-z])(pass(word|wd)?|pwd)([^a-z]|$)/;
+  for (const el of document.querySelectorAll('input')) {
+    const type = (el.getAttribute('type') || '').toLowerCase();
+    if (type === 'password') { el.dataset.agentPw = '1'; continue; }
+    const hint = [el.name, el.id, el.getAttribute('formcontrolname'), el.getAttribute('autocomplete')].join(' ').toLowerCase();
+    if (el.dataset.agentPw === '1' || PW_HINT.test(hint)) { el.type = 'password'; el.dataset.agentPw = '1'; }
+  }
 
   const vw = window.innerWidth, vh = window.innerHeight;
   const SEL = [
