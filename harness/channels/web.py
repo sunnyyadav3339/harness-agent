@@ -176,7 +176,8 @@ class WebChannel(Channel):
             "clock": f"{CLOCK.now():%Y-%m-%d %H:%M:%S}", "uptime_s": int(time.time() - d._started),
             "running": running, "queue": d.queue.qsize(), "jobs": jobs, "skills": skills, "runs": self._runs(),
             "asks": [{"id": k, "question": a["question"], "options": a["options"], "image": a["image"] is not None,
-                      "age_s": int(time.time() - a["ts"])} for k, a in self._asks.items()],
+                      "age_s": int(time.time() - a["ts"]), "timeout_s": int(a["timeout_s"])}
+                     for k, a in self._asks.items()],
             "feed": self.feed[-25:],
         }
 
