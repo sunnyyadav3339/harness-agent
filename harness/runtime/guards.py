@@ -96,7 +96,11 @@ async def check(ctx: "RunContext", tool: str, args: dict) -> ToolResult | None:
                 res = await REGISTRY.call("skill.run_macro", {"name": guard["run_macro"]}, ctx)
             finally:
                 ctx.extra["in_guard"] = False
-            ctx.run.event("guard", name=name, outcome="passed" if res.ok else "failed", tool=tool)
+            # Keep what the check actually saw: a pass because an element was "not found" must be visible later.
+            detail = (res.output or res.error or "").replace("\n", " | ")[-400:]
+            ctx.run.event("guard", name=name, outcome="passed" if res.ok else "failed", tool=tool, detail=detail)
+            if res.ok and "not found" in detail:
+                log.warning("guard %s passed but some checks found nothing to check: %s", name, detail)
             if not res.ok:
                 log.warning("guard %s failed; %s not executed", name, tool)
                 return ToolResult(False, res.output, error=f"blocked by guard '{name}': check "

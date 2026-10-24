@@ -25,6 +25,9 @@ def format_record(r: dict) -> str | None:
         return f"{t} HANDOFF RESOLVED via {r.get('source')}: {r.get('answer')} (waited {r.get('waited_s')}s)"
     if ev == "finished":
         return f"{t} FINISHED status={r.get('status')}: {(r.get('summary') or '')[:400]}"
+    if ev == "guard":
+        return (f"{t} GUARD {r.get('name')}: {str(r.get('outcome', '')).upper()} (before {r.get('tool')})"
+                + (f"\n    check: {r['detail'][-300:]}" if r.get("detail") else ""))
     if ev == "started":
         return f"{t} STARTED skill={r.get('skill')} task={(r.get('task') or '')[:160]}"
     return f"{t} {ev}: {r.get('message') or ''}"[:400]

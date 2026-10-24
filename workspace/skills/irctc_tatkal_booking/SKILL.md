@@ -91,8 +91,12 @@ Close any popup: for the language dialog click "English"; for alerts click OK or
   id from the observation (text matching "OK" hits hidden buttons). Once it is gone from "Alerts/dialogs", move on.
 - Travel insurance is preselected "Yes" (+₹0.45, which breaks the cheapest rule). Verified 24-Oct: clicking the
   "No, I don't want travel insurance" label did NOT switch it; fill_passenger clicks the radio box itself.
+- Payment mode must be "Pay through BHIM/UPI" (click its radio box). Verified 24-Oct: if it stays on the default
+  card/netbanking mode, the gateway offers only Cards / Net Banking / "UPI (CC/CL)" and no way to send a UPI-ID
+  collect request.
 - **Continue is guarded by the harness:** before it, `verify_passenger` runs automatically and must pass: name,
-  age and gender equal the vault, insurance is "No", "Book only if confirm berths are allotted" is checked. If the
+  age and gender equal the vault, insurance is "No", payment mode is BHIM/UPI, and "Book only if confirm berths
+  are allotted" is checked. If the
   Continue click is blocked, fix exactly what the check reports (click the radio box / checkbox, retype the field
   by element id) and click Continue again.
 
@@ -110,7 +114,10 @@ Close any popup: for the language dialog click "English"; for alerts click OK or
   again later.", and the page also holds three hidden "Pay & Book" copies, so never click it by plain text.
 - Real booking only: on "Unable to process Payment request", make sure the tile is selected and run
   pay_and_book again (up to 3 times, 2 s apart). In a PAYMENT TEST, stop instead.
-- Not yet verified (read the screen): on the iPay gateway choose UPI → pay by UPI ID / VPA, type
+- On the gateway (`pg.irctcpayments.com`), never choose "UPI (CC/CL)": that is UPI on credit cards/lines, not a
+  UPI-ID collect. If only Cards / Net Banking / UPI (CC/CL) are offered, BHIM/UPI was not selected on the passenger
+  form: click the gateway's "Cancel", go back and fix the payment mode.
+- Not yet verified (read the screen): with BHIM/UPI mode, choose the option to pay by UPI ID / VPA, type
   `{{secret.UPI_ID}}`, and click Pay to send the collect request.
 - Immediately call `human.ask(question="Approve the UPI collect request of ₹<fare> for <train> <class> on your phone", options=["Paid", "Cancel"], reason="payment", wait_for={"text": "PNR"}, timeout_s=420)`. The run resumes on its own when the confirmation page shows a PNR.
 
@@ -219,8 +226,11 @@ verify_passenger:
             const confirm = Array.from(document.querySelectorAll('input[type=checkbox]')).find((c) => /confirm berths/i.test(textOf(c)));
             if (!confirm) notes.push('confirm-berths option not found');
             else if (/^true$/i.test('{{vault.passenger.booking.book_only_if_confirmed}}') && !isOn(confirm)) problems.push('"Book only if confirm berths are allotted" is not checked');
+            const upi = Array.from(document.querySelectorAll('input[type=radio]')).find((r) => /BHIM\s*\/?\s*UPI/i.test(textOf(r)));
+            if (!upi) notes.push('BHIM/UPI payment mode not found');
+            else if (!isOn(upi)) problems.push('payment mode is not "Pay through BHIM/UPI" (click its radio box; the label does not switch it)');
             if (problems.length) throw new Error('OPTIONS WRONG: ' + problems.join('; '));
-            return 'options OK' + (notes.length ? ' (' + notes.join(', ') + ')' : ': insurance=No, confirm-only on');
+            return 'options OK' + (notes.length ? ' (' + notes.join(', ') + ')' : ': insurance=No, confirm-only on, payment=BHIM/UPI');
           })()
 fill_passenger:
   description: best-effort fill of passenger 1 + options; verify on screen afterwards
@@ -232,7 +242,9 @@ fill_passenger:
     - {tool: browser.eval, args: {script: "(() => { const c = Array.from(document.querySelectorAll('input[type=checkbox]')).find((x) => /confirm berths/i.test(((x.closest('p-checkbox') || x.parentElement || {}).innerText || '') + ' ' + ((x.id && document.querySelector('label[for=\"' + x.id + '\"]')) || {}).innerText)); if (c && !c.checked) c.click(); return c ? 'confirm-only=' + c.checked : 'no confirm checkbox'; })()"}, optional: true}
     # The label click does not switch PrimeNG radios (verified 24-Oct); click the radio box itself.
     - {tool: browser.click, args: {selector: "p-radiobutton:has-text('want travel insurance') .ui-radiobutton-box"}, optional: true}
-    - {tool: browser.eval, args: {script: "(() => { const labels = Array.from(document.querySelectorAll('label, p-radiobutton, .ui-radiobutton-label')); const l = labels.find(x => /BHIM\\s*\\/?\\s*UPI/i.test(x.innerText || '')); if (l) l.click(); return l ? 'payment=UPI' : 'no UPI option found'; })()"}, optional: true}
+    # Payment mode: click the radio box of "Pay through BHIM/UPI" (label clicks don't switch PrimeNG radios;
+    # verified 24-Oct: with the label click IRCTC fell back to the card/netbanking gateway with no UPI-ID option).
+    - {tool: browser.click, args: {selector: "p-radiobutton:has-text('BHIM') .ui-radiobutton-box"}, optional: true}
 ```
 
 ## Learned Heuristics (auto-updated)
