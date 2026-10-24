@@ -18,6 +18,23 @@ guards:
   - name: no_qr_payment_in_rehearsal
     when: {task_contains: "REHEARSAL", macro: "upi_qr_pay"}
     block: "This is a REHEARSAL: never start payment. Stop now with task.done (REHEARSAL, NOT BOOKED)."
+  # The task's quota wins over the skill's TATKAL default (verified 24-Oct 23:35: the model passed TATKAL for a
+  # "GENERAL quota" task). Blocks stage_search unless its params carry the quota the task names.
+  - name: task_quota_general
+    when: {task_contains: "GENERAL quota", macro: "stage_search", args_lack: "GENERAL"}
+    block: "The task says GENERAL quota: run stage_search with params {quota: \"GENERAL\"}."
+  - name: task_quota_tatkal
+    when: {task_contains: "TATKAL quota", macro: "stage_search", args_lack: "TATKAL"}
+    block: "The task says TATKAL quota: run stage_search with params {quota: \"TATKAL\"}."
+  # The form itself is checked right before Search Trains, however it was filled (macro or manual clicks).
+  - name: search_form_general
+    when: {task_contains: "GENERAL quota", click_text: "Search Trains"}
+    run_macro: verify_search_form
+    params: {quota: "GENERAL"}
+  - name: search_form_tatkal
+    when: {task_contains: "Tatkal ticket", click_text: "Search Trains"}
+    run_macro: verify_search_form
+    params: {quota: "TATKAL"}
   - name: no_upi_request_in_rehearsal
     when: {task_contains: "REHEARSAL", macro: "pay_upi_request"}
     block: "This is a REHEARSAL: never start payment. Stop now with task.done (REHEARSAL, NOT BOOKED)."
@@ -197,6 +214,27 @@ stage_search:
     - {tool: browser.click, args: {selector: "#journeyQuota li[aria-label='{{param.quota}}']"}}
     - {tool: browser.type, args: {selector: "#jDate input", text: "{{vault.passenger.journey.date}}", slow: true}}
     - {tool: browser.eval, args: {script: "(() => { document.activeElement && document.activeElement.blur(); document.body.click(); return 'date=' + document.querySelector('#jDate input').value; })()"}}
+verify_search_form:
+  description: "check From/To/date/quota on the search form against the vault and the required quota; fails on any mismatch. params {quota}"
+  defaults: {quota: "{{vault.passenger.journey.quota}}"}
+  steps:
+    - tool: browser.eval
+      args:
+        script: >-
+          (() => {
+            const val = (s) => { const e = document.querySelector(s); return e ? (e.value || e.innerText || '').trim() : ''; };
+            const got = {from: val('#origin input'), to: val('#destination input'), date: val('#jDate input'),
+                         quota: val('#journeyQuota .ui-dropdown-label')};
+            const want = {from: '{{vault.passenger.journey.from_label}}', to: '{{vault.passenger.journey.to_label}}',
+                          date: '{{vault.passenger.journey.date}}', quota: '{{param.quota}}'};
+            const bad = [];
+            if (!got.from.toUpperCase().startsWith(want.from.toUpperCase())) bad.push('From');
+            if (!got.to.toUpperCase().startsWith(want.to.toUpperCase())) bad.push('To (pick the dropdown option, not just text)');
+            if (got.date !== want.date) bad.push('date');
+            if (got.quota.toUpperCase() !== want.quota.toUpperCase()) bad.push('quota');
+            if (bad.length) throw new Error('SEARCH FORM WRONG: ' + bad.join(', ') + ' | form has ' + JSON.stringify(got) + ', needs ' + JSON.stringify(want));
+            return 'search form OK ' + JSON.stringify(got);
+          })()
 check_class:
   description: "open class tab cls (e.g. 2S) on train (e.g. 12054) and return its availability + fare; params {train, cls}"
   steps:

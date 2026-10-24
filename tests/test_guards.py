@@ -67,3 +67,20 @@ async def test_failed_check_macro_blocks_the_action(workspace):
     res = await REGISTRY.call("task.note", {"text": "hello"}, ctx)
     assert not res.ok and "must_check" in res.error
     assert ctx.notes == []  # the guarded action did not run
+
+
+async def test_args_lack_guard_enforces_the_task_quota(workspace):
+    """Regression (24-Oct 23:35): the model staged TATKAL for a 'GENERAL quota' task."""
+    from harness.runtime import guards
+
+    skill = parse_skill_text(SKILL.replace(
+        "guards:\n",
+        "guards:\n  - name: task_quota_general\n"
+        "    when: {task_contains: \"GENERAL quota\", macro: stage_search, args_lack: \"GENERAL\"}\n"
+        "    block: \"use GENERAL\"\n"), workspace.skills_dir / "guarded" / "SKILL.md")
+    ctx = _ctx(workspace, "book using GENERAL quota")
+    ctx.skill = skill
+    wrong = await guards.check(ctx, "skill.run_macro", {"name": "stage_search", "params": {"quota": "TATKAL"}})
+    right = await guards.check(ctx, "skill.run_macro", {"name": "stage_search", "params": {"quota": "GENERAL"}})
+    assert wrong is not None and "task_quota_general" in wrong.error
+    assert right is None

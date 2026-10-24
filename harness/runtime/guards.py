@@ -18,6 +18,7 @@ macro that must pass, or blocks the action outright:
   click_text    substring of the clicked element's text (id lookup, text= or selector)
   url_contains  substring of the current browser URL
   task_contains substring of the task text
+  args_lack     the action's arguments do NOT contain this substring (e.g. a required quota)
 """
 
 from __future__ import annotations
@@ -71,6 +72,11 @@ def _matches(ctx: "RunContext", when: dict, tool: str, args: dict) -> bool:
         return False
     if "task_contains" in when and low(when["task_contains"]) not in low(ctx.extra.get("task", "")):
         return False
+    if "args_lack" in when:
+        import json
+
+        if low(when["args_lack"]) in low(json.dumps(args, ensure_ascii=False)):
+            return False
     return True
 
 
@@ -93,7 +99,8 @@ async def check(ctx: "RunContext", tool: str, args: dict) -> ToolResult | None:
 
             ctx.extra["in_guard"] = True
             try:
-                res = await REGISTRY.call("skill.run_macro", {"name": guard["run_macro"]}, ctx)
+                res = await REGISTRY.call("skill.run_macro",
+                                          {"name": guard["run_macro"], "params": guard.get("params") or {}}, ctx)
             finally:
                 ctx.extra["in_guard"] = False
             # Keep what the check actually saw: a pass because an element was "not found" must be visible later.
