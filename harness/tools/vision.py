@@ -101,13 +101,21 @@ async def read_text(ctx, id=None, selector=None, region=None, verify: bool = Tru
     remote = None
     if remote_task is not None:
         try:
-            remote = await asyncio.wait_for(remote_task, timeout=6)
+            remote = await asyncio.wait_for(remote_task, timeout=9)
         except (asyncio.TimeoutError, Exception):
             remote = None
     local = re.sub(r"\s+", "", local or "")
     remote = re.sub(r"\s+", "", remote) if remote else None
     if remote and remote == local:
         return ToolResult(True, f"text={local!r} (local OCR and vision model agree)", data={"text": local})
+    # ddddocr outputs lowercase only (verified 23:58: IRCTC captcha "nFKk" read as "nfkk" and rejected), while
+    # captchas are case-sensitive: the vision model's reading carries the case.
+    if remote and remote.lower() == local.lower():
+        return ToolResult(True, f"text={remote!r} (vision model; local OCR agrees ignoring case)",
+                          data={"text": remote})
+    if remote and re.fullmatch(r"[A-Za-z0-9]{3,10}", remote) and abs(len(remote) - len(local)) <= 1:
+        return ToolResult(True, f"text={remote!r} (vision model); local OCR read {local!r}. If one is rejected, "
+                                f"refresh and read again.", data={"text": remote, "alt": local})
     if remote:
         return ToolResult(True, f"text={local!r} (local OCR); vision model read {remote!r}. "
                                 f"If one is rejected, try the other.", data={"text": local, "alt": remote})
@@ -116,9 +124,9 @@ async def read_text(ctx, id=None, selector=None, region=None, verify: bool = Tru
 
 @tool("vision.ocr_into", "Read the text in an image element (e.g. a captcha) with local OCR and type it straight into "
       "an input, in one step (no copying text between steps).",
-      "image_selector=None, image_id=None, input_selector=None, input_id=None, verify=false", timeout_s=40)
+      "image_selector=None, image_id=None, input_selector=None, input_id=None, verify=true", timeout_s=40)
 async def ocr_into(ctx, image_selector=None, image_id=None, input_selector=None, input_id=None,
-                   verify: bool = False) -> ToolResult:
+                   verify: bool = True) -> ToolResult:
     read = await read_text(ctx, id=image_id, selector=image_selector, verify=verify)
     if not read.ok:
         return read

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import subprocess
+from datetime import timedelta
 from pathlib import Path
 
 from ..policy import fingerprint
@@ -160,6 +161,11 @@ async def clock_now(ctx, tz=None) -> ToolResult:
 async def clock_wait_until(ctx, time: str, tz=None, date=None, max_wait_s: float = 7200) -> ToolResult:
     target = parse_target(time, tz, date)
     remaining = target.timestamp() - CLOCK.now_ts()
+    if date is None and remaining < -12 * 3600:
+        # A bare time far in the past means the next occurrence (verified 24-Oct 23:59: "00:20:05", the end of
+        # IRCTC's nightly maintenance, was read as that morning and the wait was skipped).
+        target += timedelta(days=1)
+        remaining += 86400
     if remaining < 0:
         return ToolResult(True, f"{target.isoformat(timespec='milliseconds')} already passed {-remaining:.2f}s ago; continue now")
     if remaining > float(max_wait_s):

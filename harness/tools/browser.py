@@ -201,6 +201,14 @@ async def _remask(page) -> None:
 
 
 # Blur the focused element, scroll the document; return whether anything moved.
+_RETAG_JS = """([x, y, id]) => {
+  const e = document.elementFromPoint(x, y);
+  if (!e || e === document.body || e === document.documentElement) return false;
+  document.querySelectorAll(`[data-agent-id="${id}"]`).forEach(o => o.removeAttribute('data-agent-id'));
+  e.setAttribute('data-agent-id', String(id));
+  return true;
+}"""
+
 _SCROLL_JS = """(dy) => {
   if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
   const before = window.scrollY; window.scrollBy(0, dy); return window.scrollY !== before;
@@ -232,7 +240,14 @@ async def _locate(ctx, id=None, selector=None, text=None):
                 return page, dom.first, None
             raise LookupError(f"element [{id}] is not in the latest observation; re-observe and use a current id")
         frame = el.frame or page.main_frame
-        return page, frame.locator(f'[data-agent-id="{int(id)}"]').first, el
+        loc = frame.locator(f'[data-agent-id="{int(id)}"]').first
+        if not await loc.count() and frame == page.main_frame and el.center:
+            # Re-rendered since the observation (verified 23:58: IRCTC rebuilds the login dialog after a captcha
+            # refresh, so its ids vanish): re-tag whatever now sits at the same spot.
+            x, y = el.center
+            if await page.evaluate(_RETAG_JS, [x, y, int(id)]):
+                loc = frame.locator(f'[data-agent-id="{int(id)}"]').first
+        return page, loc, el
     # Responsive sites keep hidden copies of controls (e.g. IRCTC has three hidden mobile
     # "Pay & Book" buttons before the visible one): target the first VISIBLE match, and
     # fall back to the first match only when none is visible (so waits still work).

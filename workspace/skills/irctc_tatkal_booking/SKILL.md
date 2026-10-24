@@ -120,7 +120,8 @@ Close any popup: for the language dialog click "English"; for alerts click OK or
   into the captcha box), clicks SIGN IN and waits for the dialog to close.
   Verified 24-Oct-2026: the dialog first had NO captcha; after several logins it shows one, and SIGN IN with an
   empty or wrong captcha answers "Invalid Request" / "Invalid Captcha".
-- **Logging in is your job, captcha included.** If login_fill fails with the dialog still open:
+- **Logging in is your job, captcha included.** For a freshly opened dialog always start with login_fill (with or
+  without a captcha). If login_fill fails with the dialog still open:
   - "Invalid Request" and NO captcha image in the dialog (verified 24-Oct 23:45: a stale page session, e.g. the run
     started on a leftover `/nget/error` page): run `skill.run_macro login_fresh` (reloads the search page, opens the
     dialog again and logs in). Up to 3 times.
@@ -238,7 +239,9 @@ login_fresh:
   steps:
     - {tool: browser.open, args: {url: "https://www.irctc.co.in/nget/train-search"}}
     - {tool: browser.wait_for, args: {text: "LOGIN", timeout_s: 15}}
-    - {tool: browser.click, args: {selector: ".ui-dialog button:has-text('English'), p-dialog button:has-text('English')"}, optional: true}
+    # The language prompt pops up a moment after load and masks the page (verified 23:56: LOGIN was covered).
+    - {tool: browser.wait_for, args: {selector: ".ui-dialog-mask", timeout_s: 4}, optional: true}
+    - {tool: browser.click, args: {selector: ".ui-dialog :text-is('English'), p-dialog :text-is('English')"}, optional: true}
     - {tool: browser.click, args: {selector: "a:has-text('LOGIN')"}}
     - {tool: browser.wait_for, args: {selector: "input[formcontrolname=userid]", timeout_s: 8}}
     - {tool: browser.type, args: {selector: "input[formcontrolname=userid]", text: "{{secret.IRCTC_USERNAME}}"}}
@@ -251,6 +254,8 @@ login_captcha:
   steps:
     - {tool: browser.click, args: {selector: "app-login .glyphicon-repeat, app-login [class*='refresh']"}, optional: true}
     - {tool: browser.wait_for, args: {selector: "app-login .captcha-img, app-login img[src^='data:image']", timeout_s: 5}}
+    # Both fields: a freshly opened dialog has an empty user id (verified 23:57: "Please Enter Valid User ID").
+    - {tool: browser.type, args: {selector: "input[formcontrolname=userid]", text: "{{secret.IRCTC_USERNAME}}"}}
     - {tool: browser.type, args: {selector: "input[formcontrolname=password]", text: "{{secret.IRCTC_PASSWORD}}"}}
     - {tool: vision.ocr_into, args: {image_selector: "app-login .captcha-img, app-login img[src^='data:image']", input_selector: "app-login input[formcontrolname=captcha], app-login #captcha, app-login input[placeholder*='aptcha']"}}
     - {tool: browser.click, args: {selector: "app-login button:has-text('SIGN IN')"}}
