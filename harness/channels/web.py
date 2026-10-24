@@ -86,7 +86,9 @@ class WebChannel(Channel):
                 return
             body = await reader.readexactly(length) if length else b""
             status, payload, ctype = await self._route(method, target, body)
-            await self._reply(writer, status, payload, ctype)
+            # Step screenshots never change once written: let the browser keep them (no flicker on redraw).
+            cache = "max-age=600" if status == 200 and target.startswith("/runs/") and "/steps/" in target else "no-store"
+            await self._reply(writer, status, payload, ctype, cache)
         except (asyncio.IncompleteReadError, asyncio.TimeoutError, ConnectionError):
             pass
         except Exception as exc:
@@ -102,14 +104,14 @@ class WebChannel(Channel):
                 pass
 
     @staticmethod
-    async def _reply(writer, status: int, payload, ctype: str | None = None) -> None:
+    async def _reply(writer, status: int, payload, ctype: str | None = None, cache: str = "no-store") -> None:
         if isinstance(payload, (dict, list)):
             data, ctype = json.dumps(payload, ensure_ascii=False, default=str).encode(), "application/json"
         else:
             data = payload if isinstance(payload, bytes) else str(payload).encode()
             ctype = ctype or "text/plain; charset=utf-8"
         writer.write((f"HTTP/1.1 {status} {_STATUS.get(status, 'OK')}\r\nContent-Type: {ctype}\r\n"
-                      f"Content-Length: {len(data)}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n").encode()
+                      f"Content-Length: {len(data)}\r\nCache-Control: {cache}\r\nConnection: close\r\n\r\n").encode()
                      + data)
         await writer.drain()
 
@@ -172,8 +174,11 @@ class WebChannel(Channel):
             skills = []
         jobs = [{"id": j.id, "next": f"{j.next_run_time:%Y-%m-%d %H:%M:%S}"}
                 for j in d.scheduler.get_jobs() if j.next_run_time and j.id.startswith("sched:")]
+        health = {"ntp_offset_ms": CLOCK.status().get("offset_ms"),
+                  "channels": [ch.name for ch in getattr(getattr(d, "channel", None), "channels", [])],
+                  "email": bool(getattr(d, "_watchers", None))}
         return {
-            "clock": f"{CLOCK.now():%Y-%m-%d %H:%M:%S}", "uptime_s": int(time.time() - d._started),
+            "clock": f"{CLOCK.now():%Y-%m-%d %H:%M:%S}", "uptime_s": int(time.time() - d._started), "health": health,
             "running": running, "queue": d.queue.qsize(), "jobs": jobs, "skills": skills, "runs": self._runs(),
             "asks": [{"id": k, "question": a["question"], "options": a["options"], "image": a["image"] is not None,
                       "age_s": int(time.time() - a["ts"]), "timeout_s": int(a["timeout_s"])}

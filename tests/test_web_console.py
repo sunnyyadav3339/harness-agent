@@ -49,7 +49,7 @@ async def test_console_state_task_and_handoff(workspace):
     base = f"http://127.0.0.1:{web.port}"
     try:
         async with httpx.AsyncClient(base_url=base) as http:
-            assert "Agent Console" in (await http.get("/")).text
+            assert "Harness Console" in (await http.get("/")).text
             state = (await http.get("/api/state")).json()
             assert state["running"] is None and state["runs"][0]["run_id"] == run.name
 
