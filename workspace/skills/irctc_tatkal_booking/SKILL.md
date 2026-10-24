@@ -35,6 +35,23 @@ guards:
     when: {task_contains: "Tatkal ticket", click_text: "Search Trains"}
     run_macro: verify_search_form
     params: {quota: "TATKAL"}
+  # Anti double-submit (verified 24-Oct 23:39: a second Continue on the review page while the first was still
+  # processing ended in /nget/error after Pay & Book).
+  - name: once_search
+    when: {click_text: "Search Trains"}
+    min_interval_s: 8
+  - name: once_book_now
+    when: {click_text: "Book Now"}
+    min_interval_s: 8
+  - name: once_review_continue
+    when: {url_contains: "/booking/reviewBooking", click_text: "Continue"}
+    min_interval_s: 15
+  - name: once_passenger_continue
+    when: {url_contains: "/booking/psgninput", click_text: "Continue"}
+    min_interval_s: 10
+  - name: once_pay_and_book
+    when: {click_text: "Pay & Book"}
+    min_interval_s: 15
   - name: no_upi_request_in_rehearsal
     when: {task_contains: "REHEARSAL", macro: "pay_upi_request"}
     block: "This is a REHEARSAL: never start payment. Stop now with task.done (REHEARSAL, NOT BOOKED)."
@@ -71,6 +88,9 @@ collect request and hand off for approval exactly as in a real booking. The huma
 or re-send a payment in a payment test. If the gateway shows the payment declined/failed/expired, or the human
 answers Cancel, stop with task.done "PAYMENT TEST, NOT BOOKED: collect request sent and declined ..." (with the
 screen state). Only if a PNR appears was a ticket booked: then follow STATE_CONFIRMATION and say so plainly.
+An IRCTC error page ("Sorry!!! Please Try again!!", /nget/error) is NOT a valid end of a payment test or a booking:
+recover per the playbook (click "Click here to login.", log in, redo search -> book -> passenger -> payment) once,
+then continue to the payment step.
 
 ## Ground rules
 - Tatkal for 2S/SL opens at `journey.window_opens` (11:00:00 IST); AC classes at 10:00:00. Journey date is `journey.date` (tomorrow).

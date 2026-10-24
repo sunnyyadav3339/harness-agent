@@ -19,6 +19,9 @@ macro that must pass, or blocks the action outright:
   url_contains  substring of the current browser URL
   task_contains substring of the task text
   args_lack     the action's arguments do NOT contain this substring (e.g. a required quota)
+
+Instead of run_macro/block, `min_interval_s: N` blocks a repeat of a matching action within N seconds
+(anti double-submit).
 """
 
 from __future__ import annotations
@@ -86,10 +89,25 @@ async def check(ctx: "RunContext", tool: str, args: dict) -> ToolResult | None:
     guards = (skill.meta.get("guards") if skill else None) or []
     if not guards or ctx.extra.get("in_guard"):
         return None
+    import time
+
+    last = ctx.extra.setdefault("guard_last", {})
+    now = time.time()
+    throttled: list[str] = []  # recorded only if the action is finally allowed
     for guard in guards:
         if not _matches(ctx, guard.get("when") or {}, tool, args):
             continue
         name = guard.get("name") or "guard"
+        if guard.get("min_interval_s"):
+            # Anti double-submit: the same critical click again within the window means the page was still
+            # processing the first one (IRCTC answers a double click with its /nget/error page).
+            if now - last.get(name, 0) < float(guard["min_interval_s"]):
+                ctx.run.event("guard", name=name, outcome="blocked", tool=tool)
+                return ToolResult(False, error=f"blocked by guard '{name}': this was already clicked "
+                                  f"{now - last[name]:.1f}s ago and the page is still processing it. Wait for the "
+                                  "page to change (browser.wait_for) instead of clicking again.")
+            throttled.append(name)
+            continue
         if guard.get("block"):
             log.warning("guard %s blocked %s", name, tool)
             ctx.run.event("guard", name=name, outcome="blocked", tool=tool)
@@ -112,4 +130,6 @@ async def check(ctx: "RunContext", tool: str, args: dict) -> ToolResult | None:
                 log.warning("guard %s failed; %s not executed", name, tool)
                 return ToolResult(False, res.output, error=f"blocked by guard '{name}': check "
                                   f"'{guard['run_macro']}' failed. Fix what it reports, then retry. {res.error or ''}")
+    for name in throttled:  # the action goes ahead: start its no-repeat window now
+        last[name] = now
     return None

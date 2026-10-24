@@ -84,3 +84,22 @@ async def test_args_lack_guard_enforces_the_task_quota(workspace):
     right = await guards.check(ctx, "skill.run_macro", {"name": "stage_search", "params": {"quota": "GENERAL"}})
     assert wrong is not None and "task_quota_general" in wrong.error
     assert right is None
+
+
+async def test_min_interval_blocks_a_quick_repeat_but_not_after_a_blocked_attempt(workspace):
+    """Anti double-submit; a click that another guard blocked must not start the no-repeat window."""
+    from harness.runtime import guards
+
+    skill = parse_skill_text(SKILL.replace(
+        "guards:\n",
+        "guards:\n  - name: once_note\n    when: {tool: task.note}\n    min_interval_s: 30\n"),
+        workspace.skills_dir / "guarded" / "SKILL.md")
+    ctx = _ctx(workspace, "CHECKED run")  # must_check guard (failing macro) also matches task.note
+    ctx.skill = skill
+    first = await guards.check(ctx, "task.note", {"text": "x"})
+    assert first is not None and "must_check" in first.error          # blocked by the check...
+    assert "once_note" not in ctx.extra.get("guard_last", {})         # ...so no window was started
+    ctx.extra["task"] = "plain run"                                   # check guard no longer applies
+    assert await guards.check(ctx, "task.note", {"text": "x"}) is None    # allowed, window starts
+    again = await guards.check(ctx, "task.note", {"text": "x"})
+    assert again is not None and "once_note" in again.error             # quick repeat blocked
