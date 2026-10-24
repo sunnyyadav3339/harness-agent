@@ -115,6 +115,10 @@ Close any popup: for the language dialog click "English"; for alerts click OK or
   left with an "IRCTC iPay New" tile on the right; the summary showed Ticket Fare ₹105 + Convenience Fee ₹17.70
   = Total ₹122.70 for 12054 2S Tatkal. Check the Fare Summary has NO "Travel Insurance" line; if it has, go Back
   and fix it on the passenger form.
+- Verified 24-Oct 22:37 with BHIM/UPI correctly selected: the page lists "IRCTC iPay (Credit Card/Debit Card/UPI)",
+  "Multiple Payment Service" and "BHIM/ UPI/ USSD" (the BHIM group only appears in UPI mode), with the
+  "IRCTC iPay New" tile; fare ₹75 + Convenience Fee ₹11.80 (UPI rate) = ₹86.80 for 12054 2S GENERAL. If you see the
+  long card/netbanking list instead, or a ₹17.70 fee, UPI mode did not take: go Back and fix the passenger form.
 - Use `skill.run_macro pay_and_book`: it selects the "IRCTC iPay New" tile, then clicks the visible Pay & Book.
   Verified 24-Oct: with the tile unselected, Pay & Book gave "Unable to process Payment request now, Please try
   again later.", and the page also holds three hidden "Pay & Book" copies, so never click it by plain text.
@@ -288,3 +292,5 @@ fill_passenger:
 - [Auto-learned 2026-10-24 16:02 IST]: When a modal alert or `<div.dimmer>` covers the passenger form (such as a concession warning), dismiss it by pressing Escape or clicking its 'OK' button before clicking Continue.
 - [Auto-learned 2026-10-24 16:36 IST]: After clicking Continue on the passenger form, wait for the 'Please Wait...' overlay to disappear before checking for 'Review Journey' text.
 - The payment page holds three hidden mobile copies of "Pay & Book" before the visible `button.btn-primary`; text clicks used to hit a hidden copy and time out (verified 24-Oct; the harness now prefers visible matches). Use pay_and_book.
+- [Auto-learned 2026-10-24 22:37 IST]: After filling the passenger form, click the first Continue button, then wait for the URL to contain "/booking/reviewBooking" before clicking the second Continue to reach the payment page.
+- [Auto-learned 2026-10-24 22:37 IST]: If a modal overlay (e.g., concession warning) appears on the passenger form, dismiss it with Escape or its 'OK' button before clicking Continue, then wait for any 'Please Wait...' overlay to disappear before proceeding.
