@@ -217,6 +217,10 @@ _COVER_JS = """(el, [x, y]) => {
 
 async def _locate(ctx, id=None, selector=None, text=None):
     page = await ctx.browser.page()
+    if id is not None and not str(id).strip().lstrip("-").isdigit():
+        # Models sometimes pass the page's own DOM id ("upi-instrument") instead of an observation number:
+        # treat it as that element's id rather than failing.
+        selector, id = f"[id='{str(id).strip()}']", None
     if id is not None:
         snap = ctx.browser_snapshot
         el = snap.by_id(int(id)) if snap else None

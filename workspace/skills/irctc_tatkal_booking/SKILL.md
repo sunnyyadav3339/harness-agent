@@ -135,11 +135,13 @@ Close any popup: for the language dialog click "English"; for alerts click OK or
   "IRCTC iPay New" tile; fare ₹75 + Convenience Fee ₹11.80 (UPI rate) = ₹86.80 for 12054 2S GENERAL. If you see the
   long card/netbanking list instead, or a ₹17.70 fee, UPI mode did not take: go Back and fix the passenger form.
 - **Preferred: UPI request to the human's phone (UPI ID).** Verified 24-Oct 22:59: "Multiple Payment Service" lists
-  PhonePe, PayU, Razorpay, Paytm. Run `skill.run_macro pay_upi_request` (gateway = `booking.gateway`, PhonePe).
+  PhonePe, PayU, Razorpay, Paytm. Run `skill.run_macro pay_upi_request` (gateway = `booking.gateway`).
+  Verified 24-Oct 23:17: the PhonePe gateway (mercury-t2.phonepe.com) on desktop is QR-only: one "UPI: Pay via UPI
+  apps, number or ID" tile, no input field at all. Do not use PhonePe for a UPI-ID request.
   On the gateway page (not yet verified, read the screen): choose UPI, then the option to pay with a UPI ID / VPA
   (NOT a QR or "scan" option), type `{{secret.UPI_ID}}` into it, and click the button that sends the request
   (Verify / Pay / Proceed). If the gateway offers no UPI-ID field, click its Cancel/Back, return to the payment
-  page and run pay_upi_request again with params {gateway: booking.gateway_fallback} (Razorpay).
+  page and run pay_upi_request again with params {gateway: booking.gateway_fallback}.
 - When the page says the request was sent (e.g. "approve the payment request in your UPI app", or a countdown),
   call `human.ask(question="Approve the UPI request of ₹<fare> for <train> <class> in your PhonePe app (or decline)", options=["Paid", "Cancel"], reason="payment", wait_for={"text": "PNR"}, timeout_s=420)`.
   The run resumes by itself when the confirmation page shows a PNR. Never ask the human to operate the laptop.
