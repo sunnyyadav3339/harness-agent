@@ -197,6 +197,13 @@ async def _remask(page) -> None:
             pass
 
 
+# Blur the focused element, scroll the document; return whether anything moved.
+_SCROLL_JS = """(dy) => {
+  if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+  const before = window.scrollY; window.scrollBy(0, dy); return window.scrollY !== before;
+}"""
+
+
 # Returns a short description of whatever covers the element's centre, or null.
 _COVER_JS = """(el, [x, y]) => {
   const hit = document.elementFromPoint(x, y);
@@ -347,7 +354,14 @@ async def browser_scroll(ctx, direction: str = "down", amount: int = 600, id=Non
         await loc.scroll_into_view_if_needed(timeout=4000)
         return ToolResult(True, f"scrolled [{id}] into view")
     dy = -abs(int(amount)) if direction == "up" else abs(int(amount))
-    await page.mouse.wheel(0, dy)
+    # Never use the mouse wheel over a focused field: on a number input (e.g. a passenger's
+    # age) the wheel silently changes the value. Blur first and scroll the document itself;
+    # only fall back to the wheel (at a neutral spot) for pages that scroll an inner container.
+    moved = await page.evaluate(_SCROLL_JS, dy)
+    if not moved:
+        vw, vh = await page.evaluate("[window.innerWidth, window.innerHeight]")
+        await page.mouse.move(vw - 12, vh // 2)
+        await page.mouse.wheel(0, dy)
     await asyncio.sleep(0.25)
     return ToolResult(True, f"scrolled {direction} {abs(dy)}px")
 

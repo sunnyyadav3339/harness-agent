@@ -111,7 +111,9 @@ class ToolRegistry:
             first_line = str(exc).strip().splitlines()[0] if str(exc).strip() else ""
             log.warning("tool %s failed: %s: %s", name, exc.__class__.__name__, first_line[:300])
             log.debug("tool %s traceback", name, exc_info=True)
-            result = ToolResult(False, error=f"{exc.__class__.__name__}: {exc}")
+            # The model needs the message, not Playwright's JS stack ("at eval (<anonymous>)...").
+            lines = [ln for ln in str(exc).splitlines() if ln.strip() and not ln.strip().startswith("at ")]
+            result = ToolResult(False, error=f"{exc.__class__.__name__}: {' '.join(lines[:3])[:600]}")
         result.elapsed_ms = int((time.perf_counter() - t0) * 1000)
         result.output = ctx.secrets.redact(result.output)
         if result.error:

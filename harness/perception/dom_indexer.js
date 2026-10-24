@@ -151,11 +151,24 @@
     id++;
   }
 
+  // Only dialogs a person can actually see right now: a closed dialog often stays in
+  // the DOM (sized, but hidden or covered), and reporting it sends the agent chasing ghosts.
+  const shown = (el) => {
+    for (let n = el; n && n !== document.documentElement; n = n.parentElement) {
+      const cs = getComputedStyle(n);
+      if (cs.display === 'none' || cs.visibility === 'hidden' || parseFloat(cs.opacity) < 0.05) return false;
+    }
+    return true;
+  };
   const alerts = [];
   for (const el of document.querySelectorAll(
     '[role=alert],[role=alertdialog],[role=dialog],[aria-live=assertive],[aria-live=polite],.alert,.toast,.ui-toast,.ui-messages,.error,.ui-dialog,.modal.show')) {
     const r = el.getBoundingClientRect();
     if (r.width < 2 || r.height < 2) continue;
+    if (r.bottom < 0 || r.top > vh || r.right < 0 || r.left > vw || !shown(el)) continue;
+    const hit = document.elementFromPoint(
+      Math.min(Math.max(r.left + r.width / 2, 0), vw - 1), Math.min(Math.max(r.top + r.height / 2, 0), vh - 1));
+    if (hit && !el.contains(hit) && !hit.contains(el)) continue;
     const t = clean(el.innerText).slice(0, 300);
     if (t && !alerts.includes(t)) alerts.push(t);
     if (alerts.length >= 6) break;

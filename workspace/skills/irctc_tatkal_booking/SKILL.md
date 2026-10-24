@@ -60,7 +60,10 @@ quota, fare). Nothing is booked until a PNR is shown, so never use the word "boo
 - Verified 24-Oct-2026: typing the name shows the saved passenger as a suggestion; clicking the exact vault name
   fills age, gender and nationality. That is the fastest path.
 - A "Senior Citizen concession not allowed..." alert with a dimmed background can appear. Click its OK by element
-  id from the observation (text matching "OK" hits hidden buttons), then click Continue.
+  id from the observation (text matching "OK" hits hidden buttons). Once it is gone from "Alerts/dialogs", move on.
+- **Before Continue, always `skill.run_macro verify_passenger`.** It reads name, age and gender from the form and
+  fails on any mismatch with the vault (the passenger's details must be exactly right). On MISMATCH, retype the
+  wrong field by element id and run it again. Continue only after it says "passenger OK".
 - Click "Continue".
 
 **STATE_REVIEW**:
@@ -126,6 +129,24 @@ book_now:
   steps:
     - {tool: browser.click, args: {selector: "app-train-avl-enq:has-text('({{param.train}})') div.pre-avl:has-text('{{vault.passenger.journey.date_card}}')"}}
     - {tool: browser.click, args: {selector: "app-train-avl-enq:has-text('({{param.train}})') button:has-text('Book Now')"}}
+verify_passenger:
+  description: "check passenger 1's name, age and gender on the form against the vault; fails on any mismatch"
+  steps:
+    - tool: browser.eval
+      args:
+        script: >-
+          (() => {
+            const q = (s) => document.querySelector(s);
+            const nameEl = q('input[placeholder*=Passenger]') || q('input[formcontrolname=passengerName]') || q('app-passenger p-autocomplete input');
+            const ageEl = q('input[formcontrolname=passengerAge]');
+            const g = q('select[formcontrolname=passengerGender]');
+            const want = {name: '{{vault.passenger.passenger.name}}', age: '{{vault.passenger.passenger.age}}', gender: '{{vault.passenger.passenger.gender}}'};
+            const got = {name: nameEl ? nameEl.value.trim() : null, age: ageEl ? ageEl.value.trim() : null,
+                         gender: g && g.selectedIndex >= 0 ? g.options[g.selectedIndex].text.trim() : null};
+            const bad = Object.keys(want).filter((k) => String(got[k] || '').toLowerCase() !== String(want[k]).toLowerCase());
+            if (bad.length) throw new Error('MISMATCH in ' + bad.join(', ') + ': form has ' + JSON.stringify(got) + ', vault wants ' + JSON.stringify(want));
+            return 'passenger OK ' + JSON.stringify(got);
+          })()
 fill_passenger:
   description: best-effort fill of passenger 1 + options; verify on screen afterwards
   steps:
