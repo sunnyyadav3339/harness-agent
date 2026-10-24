@@ -40,11 +40,9 @@ build-backend = "setuptools.build_meta"
 include = ["harness*"]
 
 [tool.setuptools.package-data]
-harness = ["perception/*.js", "runlog/*.html"]
+harness = ["perception/*.js", "runlog/*.html", "channels/*.html"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 
-[tool.setuptools.package-data]
-harness = ["**/*.html"]
