@@ -34,14 +34,9 @@ groups:
   # Fast text planner: element list + page text only, ~200-600 ms on Groq.
   # Free TPM is small (8-12k), so prompts are kept compact.
   # (llama-3.3-70b-versatile removed: not listed for our Groq keys on 24-Oct-2026.)
-  # Measured: qwen3.8-27b 0.3-0.6 s, gpt-oss-120b 0.5-0.9 s.
+  # Measured: qwen3.8-27b 0.3-0.6 s. gpt-oss-120b removed 24-Oct: in live IRCTC runs it repeatedly jumped
+  # ahead of the page (e.g. clicked Pay & Book on the passenger form) and caused most stuck handoffs.
   fast:
-    - provider: groq
-      model: openai/gpt-oss-120b
-      rpm: 30
-      tpm: 8000
-      timeout: 8
-      extra: {reasoning_effort: low}
     - provider: groq
       model: qwen/qwen3.8-27b
       rpm: 30

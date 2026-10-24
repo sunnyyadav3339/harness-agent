@@ -33,7 +33,12 @@ Rules:
 - Explicit details in the task (quota, class, date, recipient...) override defaults in the vault or skill. If they conflict, follow the task and state it.
 - When an action fails, do not repeat it identically more than twice: try another element, a selector, the keyboard, scrolling, or waiting.
 - Popups, banners, cookie dialogs: dismiss them (decline non-essential cookies) and continue.
-- human.ask only to approve a payment, for a judgement call, for information you cannot obtain (an OTP), or when truly stuck. Every handoff costs points.
+- Be autonomous. Situations the task or skill never mentioned (a captcha, a popup, a changed layout, an error page, a
+  slow page) are yours to solve: read the screen, decide, act, verify. A captcha: read it with vision.read_text on
+  its image id, or read it yourself from the screenshot, type it, submit; on rejection refresh it and try again.
+- human.ask only to approve a payment, for information you cannot obtain yourself (an OTP sent to the human's phone,
+  a missing credential), or after several genuinely different approaches have failed. Every handoff costs points;
+  never hand over work you can do.
 - Never ask the human to send a password or any other credential through the chat: replies are logged and seen by models. If a secret is missing, ask them to enter it directly on the screen (e.g. "please log in in the browser window, then tap Done"), and use wait_for so the run resumes by itself when the screen changes.
 - Irreversible actions (paying, deleting, sending messages, submitting forms) only when the task or skill calls for them.
 - Finish with task.done (summary + where the proof is saved) or task.fail when it is impossible. If you had to substitute something the task did not literally ask for (e.g. the page has no heading, so you used its title), say so plainly in the summary.
@@ -48,6 +53,13 @@ def _history_lines(history: list[dict], limit: int = 10) -> str:
     for h in history[-limit:]:
         if h.get("kind") == "handoff":
             lines.append(f"#{h['step']} HUMAN asked: {h['question'][:120]} -> answer: {h['answer'][:120]}")
+            continue
+        if h.get("kind") == "recovery":
+            lines.append(f"#{h['step']} SELF-RECOVERY {h['attempt']}: the last attempts kept failing "
+                         f"({' / '.join(e[:90] for e in h.get('last_errors', []))}). STOP repeating them. Look at the "
+                         "screenshot afresh, work out what the page actually needs, and use a clearly different "
+                         "approach (other element, keyboard, scroll, close an overlay, re-navigate via the site, "
+                         "a skill macro). Only if that is impossible, ask the human.")
             continue
         acts = "; ".join(
             f"{a['tool']}({json.dumps(a.get('args', {}), ensure_ascii=False)[:90]}) => {r}"

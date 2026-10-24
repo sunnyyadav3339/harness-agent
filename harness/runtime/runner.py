@@ -160,7 +160,7 @@ class Runner:
                 "run_id": run_id, "task": task, "skill_name": skill.name if skill else None, "trigger": trigger,
                 "step": 0, "max_steps": int(skill.max_steps or 80) if skill else 60, "phase": "start",
                 "history": [], "notes": [], "status": "running", "summary": "", "pending_handoff": None,
-                "approvals": [], "failures": 0, "error_ledger": [], "need_vision": False, "handoffs": 0,
+                "approvals": [], "failures": 0, "error_ledger": [], "need_vision": False, "handoffs": 0, "recoveries": 0,
             }
             payload = None if resume else initial
             while True:

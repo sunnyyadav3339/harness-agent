@@ -112,7 +112,8 @@ async def test_abort_at_stuck_handoff_ends_cleanly(workspace, monkeypatch):
     """Regression: answering Abort crashed the run with KeyError: 'run_id' (rehearsal 24-Oct 16:16)."""
     _fake_desktop(monkeypatch)
     bad = {"thought": "try", "phase": "LOOP", "actions": [{"tool": "file.read", "args": {"path": "Z:/nope.txt"}}]}
-    router = ScriptedRouter([json.dumps(bad)] * 4 + ['{"heuristics": []}'])
+    # 4 failures x (2 self-recoveries + 1) before the agent may ask a human
+    router = ScriptedRouter([json.dumps(bad)] * 12 + ['{"heuristics": []}'])
     channel = FakeChannel(answer="Abort")
     outcome = await Runner(workspace, channel=channel, router=router).run("read a file", trigger="test", record=False)
     assert outcome.status == "cancelled", outcome.summary
@@ -123,8 +124,27 @@ async def test_repeated_failures_trigger_stuck_handoff(workspace, monkeypatch):
     _fake_desktop(monkeypatch)
     bad = {"thought": "try", "phase": "LOOP", "actions": [{"tool": "file.read", "args": {"path": "Z:/nope.txt"}}]}
     done = {"thought": "give up", "phase": "END", "actions": [{"tool": "task.fail", "args": {"reason": "file missing"}}]}
-    router = ScriptedRouter([json.dumps(bad)] * 4 + [json.dumps(done)])
+    router = ScriptedRouter([json.dumps(bad)] * 12 + [json.dumps(done)])
     channel = FakeChannel()
     outcome = await Runner(workspace, channel=channel, router=router).run("read a file", trigger="test", record=False)
     assert outcome.status == "failed"
     assert len(channel.asked) == 1 and "stuck" in channel.asked[0]
+    events = [json.loads(line).get("event") for line in
+              (workspace.runs_dir / outcome.run_id / "trace.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert events.count("recovery") == 2  # tried to recover twice on its own before asking
+
+
+async def test_self_recovery_solves_without_a_human(workspace, monkeypatch):
+    """After 4 failures the agent recovers by itself; if the new approach works, no human is ever asked."""
+    _fake_desktop(monkeypatch)
+    bad = {"thought": "try", "phase": "LOOP", "actions": [{"tool": "file.read", "args": {"path": "Z:/nope.txt"}}]}
+    done = {"thought": "different approach worked", "phase": "END",
+            "actions": [{"tool": "task.done", "args": {"summary": "solved after self-recovery"}}]}
+    router = ScriptedRouter([json.dumps(bad)] * 4 + [json.dumps(done), '{"heuristics": []}'])
+    channel = FakeChannel()
+    outcome = await Runner(workspace, channel=channel, router=router).run("read a file", trigger="test", record=False)
+    assert outcome.status == "done" and channel.asked == []
+    # the planner was told about the recovery in its next prompt
+    last_prompt = router.prompts[4][1]["content"]
+    text = last_prompt[0]["text"] if isinstance(last_prompt, list) else last_prompt
+    assert "SELF-RECOVERY 1" in text

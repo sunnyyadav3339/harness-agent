@@ -44,6 +44,7 @@ class AgentState(TypedDict, total=False):
     error_ledger: list[str]
     need_vision: bool
     handoffs: int
+    recoveries: int  # self-recovery rounds used (LangGraph drops keys not declared here)
 
 
 @dataclass

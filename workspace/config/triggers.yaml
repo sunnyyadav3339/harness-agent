@@ -31,8 +31,8 @@ schedules:
     task: >-
       Book the cheapest Tatkal ticket from Roorkee (RK) to Haridwar (HW) for tomorrow for the passenger in the
       vault. Log in now, stage the search, and click Search at the strike time (11:00:00.400 IST). Pick the
-      lowest-fare AVAILABLE option, fill the passenger, pay via UPI collect (the human approves on their phone),
-      and save the PNR proof.
+      lowest-fare AVAILABLE option, fill the passenger (BHIM/UPI payment mode), pay via Multiple Payment Service ->
+      PhonePe and hand off the PhonePe QR for the human to scan and approve on their phone, then save the PNR proof.
 
 email:
   # Example: "when an email arrives" trigger for the demo video.

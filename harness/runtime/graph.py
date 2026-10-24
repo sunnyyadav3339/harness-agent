@@ -34,6 +34,7 @@ log = logging.getLogger(__name__)
 
 MAX_BATCH = 8
 MAX_FAILURES = 4
+MAX_RECOVERIES = 2  # self-recovery rounds before a "stuck" handoff
 HISTORY_KEEP = 40
 _BROWSER_FAMILY = ("browser.", "vision.read_text")
 
@@ -344,6 +345,18 @@ async def act(state: AgentState) -> dict:
         return update
     if handoff:
         update["pending_handoff"] = handoff
+        return update
+    if failures >= MAX_FAILURES and state.get("recoveries", 0) < MAX_RECOVERIES:
+        # Self-recovery before bothering a human: reset the counter, force a vision turn and tell the planner
+        # to step back and change strategy (the human is for approvals, not for problems the agent can solve).
+        recoveries = state.get("recoveries", 0) + 1
+        history.append({"kind": "recovery", "step": step, "attempt": recoveries,
+                        "last_errors": ledger[-3:]})
+        update.update({"failures": 0, "recoveries": recoveries, "need_vision": True,
+                       "history": history[-HISTORY_KEEP:]})
+        ctx.run.event("recovery", message=f"self-recovery {recoveries}/{MAX_RECOVERIES} after {failures} failures",
+                      last_errors=ledger[-3:])
+        log.info("self-recovery %d/%d after %d failures", recoveries, MAX_RECOVERIES, failures)
         return update
     if failures >= MAX_FAILURES:
         update["pending_handoff"] = {
