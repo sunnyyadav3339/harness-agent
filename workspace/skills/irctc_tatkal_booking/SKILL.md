@@ -208,29 +208,30 @@ verify_passenger:
             if (bad.length) throw new Error('MISMATCH in ' + bad.join(', ') + ': form has ' + JSON.stringify(got) + ', vault wants ' + JSON.stringify(want));
             return 'passenger OK ' + JSON.stringify(got);
           })()
-    # Options that change the fare or the outcome. Fails only when an option is found and set wrongly.
+    # Options that change the fare or the outcome. DOM verified 24-Oct on /booking/psgninput:
+    #   <label for="2"><p-radiobutton formcontrolname="paymentType" ...><div role="radio" aria-checked="true|false"
+    #   class="ui-radiobutton-box ...">...</p-radiobutton> Pay through BHIM/UPI</label>
+    # i.e. the option text is OUTSIDE p-radiobutton, in its parent; state = the box's aria-checked.
+    # Insurance and payment mode always exist on this page, so "not found" fails too.
     - tool: browser.eval
       args:
         script: >-
           (() => {
-            const host = (inp) => inp.closest('p-radiobutton, p-checkbox') || inp.parentElement;
-            const textOf = (inp) => {
-              const lab = inp.id ? document.querySelector('label[for="' + inp.id + '"]') : null;
-              return ((host(inp) && host(inp).innerText) || '') + ' ' + ((lab && lab.innerText) || '');
-            };
-            const isOn = (inp) => inp.checked || !!(host(inp) && host(inp).querySelector('.ui-state-active'));
-            const problems = [], notes = [];
-            const noIns = Array.from(document.querySelectorAll('input[type=radio]')).find((r) => /want travel insurance/i.test(textOf(r)));
-            if (!noIns) notes.push('insurance option not found');
-            else if (!isOn(noIns)) problems.push('travel insurance is not "No" (it adds a premium; click the No radio box)');
-            const confirm = Array.from(document.querySelectorAll('input[type=checkbox]')).find((c) => /confirm berths/i.test(textOf(c)));
-            if (!confirm) notes.push('confirm-berths option not found');
-            else if (/^true$/i.test('{{vault.passenger.booking.book_only_if_confirmed}}') && !isOn(confirm)) problems.push('"Book only if confirm berths are allotted" is not checked');
-            const upi = Array.from(document.querySelectorAll('input[type=radio]')).find((r) => /BHIM\s*\/?\s*UPI/i.test(textOf(r)));
-            if (!upi) notes.push('BHIM/UPI payment mode not found');
-            else if (!isOn(upi)) problems.push('payment mode is not "Pay through BHIM/UPI" (click its radio box; the label does not switch it)');
+            const pick = (re) => Array.from(document.querySelectorAll('p-radiobutton'))
+              .find((p) => re.test((p.parentElement && p.parentElement.innerText) || ''));
+            const on = (p) => !!p.querySelector('[role=radio][aria-checked="true"], .ui-radiobutton-box.ui-state-active');
+            const problems = [];
+            const noIns = pick(/want travel insurance/i);
+            if (!noIns) problems.push('travel-insurance "No" option not found on this page');
+            else if (!on(noIns)) problems.push('travel insurance is not "No" (run fill_passenger, which clicks the radio box)');
+            const upi = pick(/BHIM\s*\/?\s*UPI/i);
+            if (!upi) problems.push('"Pay through BHIM/UPI" option not found on this page');
+            else if (!on(upi)) problems.push('payment mode is not "Pay through BHIM/UPI" (run fill_passenger, which clicks the radio box)');
+            const confirm = document.querySelector('#confirmberths, input[formcontrolname=bookOnlyIfCnf]');
+            if (confirm && /^true$/i.test('{{vault.passenger.booking.book_only_if_confirmed}}') && !confirm.checked)
+              problems.push('"Book only if confirm berths are allotted" is not checked (clicking its label toggles it; run fill_passenger)');
             if (problems.length) throw new Error('OPTIONS WRONG: ' + problems.join('; '));
-            return 'options OK' + (notes.length ? ' (' + notes.join(', ') + ')' : ': insurance=No, confirm-only on, payment=BHIM/UPI');
+            return 'options OK: insurance=No, payment=BHIM/UPI, confirm-only=' + (confirm ? confirm.checked : 'n/a');
           })()
 fill_passenger:
   description: best-effort fill of passenger 1 + options; verify on screen afterwards
@@ -239,12 +240,37 @@ fill_passenger:
     - {tool: browser.press, args: {key: Tab}, optional: true}
     - {tool: browser.type, args: {selector: "input[formcontrolname=passengerAge]", text: "{{vault.passenger.passenger.age}}"}, optional: true}
     - {tool: browser.select, args: {selector: "select[formcontrolname=passengerGender]", value: "{{vault.passenger.passenger.gender}}"}, optional: true}
-    - {tool: browser.eval, args: {script: "(() => { const c = Array.from(document.querySelectorAll('input[type=checkbox]')).find((x) => /confirm berths/i.test(((x.closest('p-checkbox') || x.parentElement || {}).innerText || '') + ' ' + ((x.id && document.querySelector('label[for=\"' + x.id + '\"]')) || {}).innerText)); if (c && !c.checked) c.click(); return c ? 'confirm-only=' + c.checked : 'no confirm checkbox'; })()"}, optional: true}
-    # The label click does not switch PrimeNG radios (verified 24-Oct); click the radio box itself.
-    - {tool: browser.click, args: {selector: "p-radiobutton:has-text('want travel insurance') .ui-radiobutton-box"}, optional: true}
-    # Payment mode: click the radio box of "Pay through BHIM/UPI" (label clicks don't switch PrimeNG radios;
-    # verified 24-Oct: with the label click IRCTC fell back to the card/netbanking gateway with no UPI-ID option).
-    - {tool: browser.click, args: {selector: "p-radiobutton:has-text('BHIM') .ui-radiobutton-box"}, optional: true}
+    # Idempotent: only acts when an option is not already in the wanted state (clicking twice toggles).
+    - tool: browser.eval
+      args:
+        script: >-
+          (() => {
+            const c = document.querySelector('#confirmberths, input[formcontrolname=bookOnlyIfCnf]');
+            if (c && /^true$/i.test('{{vault.passenger.booking.book_only_if_confirmed}}') && !c.checked) c.click();
+            return c ? 'confirm-only=' + c.checked : 'no confirm checkbox';
+          })()
+      optional: true
+    # Radios: the option text sits outside p-radiobutton (in its parent label), so find the p-radiobutton by
+    # its parent's text, tag its box, then really click it. Verified 24-Oct: label/text clicks did not switch them.
+    - tool: browser.eval
+      args:
+        script: >-
+          (() => {
+            const pick = (re) => Array.from(document.querySelectorAll('p-radiobutton'))
+              .find((p) => re.test((p.parentElement && p.parentElement.innerText) || ''));
+            const on = (p) => !!p.querySelector('[role=radio][aria-checked="true"], .ui-radiobutton-box.ui-state-active');
+            const out = [];
+            for (const [tag, re] of [['ins-no', /want travel insurance/i], ['pay-upi', /BHIM\s*\/?\s*UPI/i]]) {
+              const p = pick(re);
+              const box = p && p.querySelector('.ui-radiobutton-box');
+              if (box) box.setAttribute('data-agent-target', on(p) ? 'done' : tag);
+              out.push(tag + '=' + (p ? (on(p) ? 'already on' : 'to click') : 'not found'));
+            }
+            return out.join(', ');
+          })()
+      optional: true
+    - {tool: browser.click, args: {selector: "[data-agent-target=ins-no]"}, optional: true}
+    - {tool: browser.click, args: {selector: "[data-agent-target=pay-upi]"}, optional: true}
 ```
 
 ## Learned Heuristics (auto-updated)
