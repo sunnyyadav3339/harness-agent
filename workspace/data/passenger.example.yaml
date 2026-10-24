@@ -39,7 +39,8 @@ booking:
   auto_upgradation: false
   # Payment: "Multiple Payment Service" -> this gateway -> type the UPI ID -> request goes to the UPI app that owns
   # the UPI ID (PhonePe for @ybl/@ibl/@axl). Fallback if the first gateway has no UPI-ID field.
-  # Verified 24-Oct 23:17: the PhonePe gateway on desktop is QR-only (no UPI-ID field), so it is not used.
-  gateway: "Razorpay"
-  gateway_fallback: "PayU"
+  # Verified 24-Oct 23:17: the PhonePe gateway on desktop shows a UPI QR right away (no UPI-ID field). The human
+  # approves by scanning it with their UPI app and entering the PIN on the phone (laptop stays untouched).
+  gateway: "PhonePe"
+  gateway_fallback: "IRCTC iPay QR"
   payment: "UPI collect request to the team member's UPI id ({{secret.UPI_ID}})"
