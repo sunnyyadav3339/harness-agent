@@ -95,6 +95,7 @@ class Runner:
             secrets=SECRETS, skill=skill, vault=load_vault(settings.workspace, skill), channel=self.channel,
             other_skills=[(s.name, s.description) for s in library.all() if not skill or s.name != skill.name],
         )
+        ctx.extra["task"] = task
         if prior:
             ctx.notes = list(prior.get("notes") or [])
             for fp in prior.get("approvals") or []:

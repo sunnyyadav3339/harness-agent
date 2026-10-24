@@ -119,7 +119,9 @@ A heuristic qualifies only if ALL hold:
 - it is backed by something that actually happened in the trace (an error, then what worked);
 - it is concrete (selector, control name, ordering, timing) and at most 200 characters;
 - it never relaxes the task: no "substitute X when Y is missing" or "skip verification" advice;
-- it does not restate an existing heuristic.
+- it does not restate an existing heuristic;
+- it never cites numeric element ids like [22] or id=22: those are reassigned on every observation. Use visible
+  text, labels, CSS selectors or the order of actions instead.
 Most runs teach nothing durable: return an empty list unless you are confident.
 Reply JSON: {"heuristics": ["..."]}
 

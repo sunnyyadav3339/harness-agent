@@ -97,6 +97,12 @@ class ToolRegistry:
         unknown = [k for k in rendered if k not in accepted]
         if unknown and not has_var_kw:
             return ToolResult(False, error=f"unexpected argument(s) {unknown} for {name}({spec.params})")
+        # Skill guards run here, so they also cover steps inside macros.
+        from ..runtime import guards
+
+        blocked = await guards.check(ctx, name, args)
+        if blocked is not None:
+            return blocked
         t0 = time.perf_counter()
         try:
             result = await asyncio.wait_for(spec.fn(ctx, **rendered), timeout=spec.timeout_s)

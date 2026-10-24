@@ -224,10 +224,17 @@ async def _locate(ctx, id=None, selector=None, text=None):
             raise LookupError(f"element [{id}] is not in the latest observation; re-observe and use a current id")
         frame = el.frame or page.main_frame
         return page, frame.locator(f'[data-agent-id="{int(id)}"]').first, el
+    # Responsive sites keep hidden copies of controls (e.g. IRCTC has three hidden mobile
+    # "Pay & Book" buttons before the visible one): target the first VISIBLE match, and
+    # fall back to the first match only when none is visible (so waits still work).
     if selector:
-        return page, page.locator(selector).first, None
+        loc = page.locator(selector)
+        visible = loc.filter(visible=True)
+        return page, (visible.first if await visible.count() else loc.first), None
     if text:
-        return page, page.get_by_text(text, exact=False).first, None
+        loc = page.get_by_text(text, exact=False)
+        visible = loc.filter(visible=True)
+        return page, (visible.first if await visible.count() else loc.first), None
     raise ValueError("give one of id, selector or text")
 
 

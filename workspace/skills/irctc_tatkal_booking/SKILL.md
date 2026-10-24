@@ -7,6 +7,17 @@ data: ["data/passenger.yaml"]
 vision: auto
 max_steps: 140
 busy_selectors: ["div.loader-container", "#loaderP", ".my-loading", ".ui-blockui", "app-loader"]
+# Enforced by the harness before every matching action (also inside macros), not left to the model.
+guards:
+  - name: no_payment_in_rehearsal
+    when: {task_contains: "REHEARSAL", click_text: "Pay & Book"}
+    block: "This is a REHEARSAL: never click Pay & Book. Stop now with task.done (REHEARSAL, NOT BOOKED)."
+  - name: no_payment_macro_in_rehearsal
+    when: {task_contains: "REHEARSAL", macro: "pay_and_book"}
+    block: "This is a REHEARSAL: never start payment. Stop now with task.done (REHEARSAL, NOT BOOKED)."
+  - name: passenger_and_options_verified
+    when: {url_contains: "/booking/psgninput", click_text: "Continue"}
+    run_macro: verify_passenger
 ---
 # IRCTC Tatkal booking: cheapest ticket, hands-free
 
@@ -17,6 +28,11 @@ secrets: type `{{secret.IRCTC_USERNAME}}`, `{{secret.IRCTC_PASSWORD}}`, `{{secre
 **REHEARSAL**: run every phase but stop on the payment page. Never click "Pay & Book" in a rehearsal. Then
 task.done with a summary that starts "REHEARSAL, NOT BOOKED: reached the payment page for ..." (train, class,
 quota, fare). Nothing is booked until a PNR is shown, so never use the word "booked" before that.
+**PAYMENT TEST** (task says so): run the full flow including STATE_PAYMENT: click "Pay & Book", send the UPI
+collect request and hand off for approval exactly as in a real booking. The human intends to DECLINE. Never retry
+or re-send a payment in a payment test. If the gateway shows the payment declined/failed/expired, or the human
+answers Cancel, stop with task.done "PAYMENT TEST, NOT BOOKED: collect request sent and declined ..." (with the
+screen state). Only if a PNR appears was a ticket booked: then follow STATE_CONFIRMATION and say so plainly.
 
 ## Ground rules
 - Tatkal for 2S/SL opens at `journey.window_opens` (11:00:00 IST); AC classes at 10:00:00. Journey date is `journey.date` (tomorrow).
@@ -58,8 +74,10 @@ Close any popup: for the language dialog click "English"; for alerts click OK or
 - Each train is a card (`app-train-avl-enq`) titled like "HW JANSHATABDI (12054)" with class tabs such as "Second Sitting (2S)", "Sleeper (SL)" and "AC Chair car (CC)", each showing "Refresh" until clicked.
 - Run `skill.run_macro check_class` with params {train, cls} for each candidate. It clicks the class tab and returns the card text: the date cell shows e.g. "Sun, 25 Oct AVAILABLE-37" and the fare next to Book Now (e.g. "₹ 105"). AVAILABLE-n / AVL-n is bookable; WL, TQWL, REGRET or NOT AVAILABLE is not. task.note every fare and availability seen.
 - Route facts verified 24-Oct-2026: of 15 RK→HW trains, only 12054 HW JANSHATABDI (dep 13:04) and 12055 DDN JANSHTBDI offer 2S. 12054 2S Tatkal showed ₹105. All others are SL/3E/3A/2A/1A/CC/EC, which cost more. So check 2S on 12054 and 12055 first, and book the cheaper one that is AVAILABLE. Only if neither is AVAILABLE, check SL on the SL trains and take the cheapest AVAILABLE, then other classes.
-- Do NOT scroll or use the class filter to look for trains: `check_class` finds a card anywhere on the page.
-  Run check_class for 12054 and 12055 in ONE turn (two actions), compare, then book.
+- Do NOT scroll or use the class filter to look for trains: the macros find a card anywhere on the page.
+- **First action on the train list: `skill.run_macro check_2s_both`.** It opens 2S on BOTH 12054 and 12055 and
+  returns both cards (availability + fare). task.note both fares, then book the cheaper AVAILABLE one (on a tie,
+  the earlier departure). Never Book Now on one train before both have been read: the cheapest rule depends on it.
 - `skill.run_macro book_now` with {train}: it selects the journey-date cell (`journey.date_card`, e.g. "Mon, 26 Oct")
   and clicks Book Now. Verified: Book Now does nothing until that date cell is selected. Accept any
   confirmation dialog ("I Agree"/"Yes"/"OK").
@@ -71,10 +89,12 @@ Close any popup: for the language dialog click "English"; for alerts click OK or
   fills age, gender and nationality. That is the fastest path.
 - A "Senior Citizen concession not allowed..." alert with a dimmed background can appear. Click its OK by element
   id from the observation (text matching "OK" hits hidden buttons). Once it is gone from "Alerts/dialogs", move on.
-- **Before Continue, always `skill.run_macro verify_passenger`.** It reads name, age and gender from the form and
-  fails on any mismatch with the vault (the passenger's details must be exactly right). On MISMATCH, retype the
-  wrong field by element id and run it again. Continue only after it says "passenger OK".
-- Click "Continue".
+- Travel insurance is preselected "Yes" (+₹0.45, which breaks the cheapest rule). Verified 24-Oct: clicking the
+  "No, I don't want travel insurance" label did NOT switch it; fill_passenger clicks the radio box itself.
+- **Continue is guarded by the harness:** before it, `verify_passenger` runs automatically and must pass: name,
+  age and gender equal the vault, insurance is "No", "Book only if confirm berths are allotted" is checked. If the
+  Continue click is blocked, fix exactly what the check reports (click the radio box / checkbox, retype the field
+  by element id) and click Continue again.
 
 **STATE_REVIEW**:
 - Verify train, class, quota, date, passenger and total fare. If the status now shows WL/TQWL for a "confirm only" booking, go Back and take the next cheapest AVL option.
@@ -83,7 +103,13 @@ Close any popup: for the language dialog click "English"; for alerts click OK or
 **STATE_PAYMENT** (REHEARSAL stops here with task.done, without clicking "Pay & Book"):
 - Verified page `/nget/payment/bkgPaymentOptions`: "IRCTC iPay (Credit Card/Debit Card/UPI)" is selected on the
   left with an "IRCTC iPay New" tile on the right; the summary showed Ticket Fare ₹105 + Convenience Fee ₹17.70
-  = Total ₹122.70 for 12054 2S Tatkal. Click the "IRCTC iPay New" tile, then "Pay & Book".
+  = Total ₹122.70 for 12054 2S Tatkal. Check the Fare Summary has NO "Travel Insurance" line; if it has, go Back
+  and fix it on the passenger form.
+- Use `skill.run_macro pay_and_book`: it selects the "IRCTC iPay New" tile, then clicks the visible Pay & Book.
+  Verified 24-Oct: with the tile unselected, Pay & Book gave "Unable to process Payment request now, Please try
+  again later.", and the page also holds three hidden "Pay & Book" copies, so never click it by plain text.
+- Real booking only: on "Unable to process Payment request", make sure the tile is selected and run
+  pay_and_book again (up to 3 times, 2 s apart). In a PAYMENT TEST, stop instead.
 - Not yet verified (read the screen): on the iPay gateway choose UPI → pay by UPI ID / VPA, type
   `{{secret.UPI_ID}}`, and click Pay to send the collect request.
 - Immediately call `human.ask(question="Approve the UPI collect request of ₹<fare> for <train> <class> on your phone", options=["Paid", "Cancel"], reason="payment", wait_for={"text": "PNR"}, timeout_s=420)`. The run resumes on its own when the confirmation page shows a PNR.
@@ -134,11 +160,26 @@ check_class:
     - {tool: browser.click, args: {selector: "app-train-avl-enq:has-text('({{param.train}})') >> text=/\\({{param.cls}}\\)$/"}}
     - {tool: browser.wait_for, args: {selector: "app-train-avl-enq:has-text('({{param.train}})') :text-matches('AVAILABLE|AVL|WL|REGRET|NOT AVAILABLE|DEPARTED|₹', 'i')", timeout_s: 15}, optional: true}
     - {tool: browser.read, args: {selector: "app-train-avl-enq:has-text('({{param.train}})')", max_chars: 700}}
+check_2s_both:
+  description: "open 2S on BOTH 12054 and 12055 and return both cards (availability + fare) to compare"
+  steps:
+    - {tool: browser.click, args: {selector: "app-train-avl-enq:has-text('(12054)') >> text=/\\(2S\\)$/"}, optional: true}
+    - {tool: browser.wait_for, args: {selector: "app-train-avl-enq:has-text('(12054)') :text-matches('AVAILABLE|AVL|WL|REGRET|NOT AVAILABLE|DEPARTED|₹', 'i')", timeout_s: 15}, optional: true}
+    - {tool: browser.read, args: {selector: "app-train-avl-enq:has-text('(12054)')", max_chars: 500}, optional: true}
+    - {tool: browser.click, args: {selector: "app-train-avl-enq:has-text('(12055)') >> text=/\\(2S\\)$/"}, optional: true}
+    - {tool: browser.wait_for, args: {selector: "app-train-avl-enq:has-text('(12055)') :text-matches('AVAILABLE|AVL|WL|REGRET|NOT AVAILABLE|DEPARTED|₹', 'i')", timeout_s: 15}, optional: true}
+    - {tool: browser.read, args: {selector: "app-train-avl-enq:has-text('(12055)')", max_chars: 500}, optional: true}
 book_now:
   description: "select the journey-date cell on train {train}'s card, then click its Book Now"
   steps:
     - {tool: browser.click, args: {selector: "app-train-avl-enq:has-text('({{param.train}})') div.pre-avl:has-text('{{vault.passenger.journey.date_card}}')"}}
     - {tool: browser.click, args: {selector: "app-train-avl-enq:has-text('({{param.train}})') button:has-text('Book Now')"}}
+pay_and_book:
+  description: "select the 'IRCTC iPay New' gateway tile, then click the visible Pay & Book (starts the payment)"
+  steps:
+    - {tool: browser.click, args: {text: "IRCTC iPay New"}}
+    - {tool: wait, args: {seconds: 0.5}}
+    - {tool: browser.click, args: {selector: "button.btn-primary:has-text('Pay & Book')"}}
 verify_passenger:
   description: "check passenger 1's name, age and gender on the form against the vault; fails on any mismatch"
   steps:
@@ -160,6 +201,27 @@ verify_passenger:
             if (bad.length) throw new Error('MISMATCH in ' + bad.join(', ') + ': form has ' + JSON.stringify(got) + ', vault wants ' + JSON.stringify(want));
             return 'passenger OK ' + JSON.stringify(got);
           })()
+    # Options that change the fare or the outcome. Fails only when an option is found and set wrongly.
+    - tool: browser.eval
+      args:
+        script: >-
+          (() => {
+            const host = (inp) => inp.closest('p-radiobutton, p-checkbox') || inp.parentElement;
+            const textOf = (inp) => {
+              const lab = inp.id ? document.querySelector('label[for="' + inp.id + '"]') : null;
+              return ((host(inp) && host(inp).innerText) || '') + ' ' + ((lab && lab.innerText) || '');
+            };
+            const isOn = (inp) => inp.checked || !!(host(inp) && host(inp).querySelector('.ui-state-active'));
+            const problems = [], notes = [];
+            const noIns = Array.from(document.querySelectorAll('input[type=radio]')).find((r) => /want travel insurance/i.test(textOf(r)));
+            if (!noIns) notes.push('insurance option not found');
+            else if (!isOn(noIns)) problems.push('travel insurance is not "No" (it adds a premium; click the No radio box)');
+            const confirm = Array.from(document.querySelectorAll('input[type=checkbox]')).find((c) => /confirm berths/i.test(textOf(c)));
+            if (!confirm) notes.push('confirm-berths option not found');
+            else if (/^true$/i.test('{{vault.passenger.booking.book_only_if_confirmed}}') && !isOn(confirm)) problems.push('"Book only if confirm berths are allotted" is not checked');
+            if (problems.length) throw new Error('OPTIONS WRONG: ' + problems.join('; '));
+            return 'options OK' + (notes.length ? ' (' + notes.join(', ') + ')' : ': insurance=No, confirm-only on');
+          })()
 fill_passenger:
   description: best-effort fill of passenger 1 + options; verify on screen afterwards
   steps:
@@ -167,8 +229,9 @@ fill_passenger:
     - {tool: browser.press, args: {key: Tab}, optional: true}
     - {tool: browser.type, args: {selector: "input[formcontrolname=passengerAge]", text: "{{vault.passenger.passenger.age}}"}, optional: true}
     - {tool: browser.select, args: {selector: "select[formcontrolname=passengerGender]", value: "{{vault.passenger.passenger.gender}}"}, optional: true}
-    - {tool: browser.eval, args: {script: "(() => { const c = document.querySelector('#confirmberths'); if (c && !c.checked) c.click(); return c ? 'confirm-only=' + c.checked : 'no confirm checkbox'; })()"}, optional: true}
-    - {tool: browser.eval, args: {script: "(() => { const r = Array.from(document.querySelectorAll('input[type=radio][name*=nsurance]')).find(x => String(x.value) === 'false'); if (r) r.click(); return r ? 'insurance=no' : 'no insurance radio'; })()"}, optional: true}
+    - {tool: browser.eval, args: {script: "(() => { const c = Array.from(document.querySelectorAll('input[type=checkbox]')).find((x) => /confirm berths/i.test(((x.closest('p-checkbox') || x.parentElement || {}).innerText || '') + ' ' + ((x.id && document.querySelector('label[for=\"' + x.id + '\"]')) || {}).innerText)); if (c && !c.checked) c.click(); return c ? 'confirm-only=' + c.checked : 'no confirm checkbox'; })()"}, optional: true}
+    # The label click does not switch PrimeNG radios (verified 24-Oct); click the radio box itself.
+    - {tool: browser.click, args: {selector: "p-radiobutton:has-text('want travel insurance') .ui-radiobutton-box"}, optional: true}
     - {tool: browser.eval, args: {script: "(() => { const labels = Array.from(document.querySelectorAll('label, p-radiobutton, .ui-radiobutton-label')); const l = labels.find(x => /BHIM\\s*\\/?\\s*UPI/i.test(x.innerText || '')); if (l) l.click(); return l ? 'payment=UPI' : 'no UPI option found'; })()"}, optional: true}
 ```
 
@@ -180,3 +243,4 @@ fill_passenger:
 - Quota dropdown items: select by aria-label (`#journeyQuota li[aria-label='TATKAL']`). Text matching also hits "PREMIUM TATKAL".
 - [Auto-learned 2026-10-24 16:02 IST]: When a modal alert or `<div.dimmer>` covers the passenger form (such as a concession warning), dismiss it by pressing Escape or clicking its 'OK' button before clicking Continue.
 - [Auto-learned 2026-10-24 16:36 IST]: After clicking Continue on the passenger form, wait for the 'Please Wait...' overlay to disappear before checking for 'Review Journey' text.
+- The payment page holds three hidden mobile copies of "Pay & Book" before the visible `button.btn-primary`; text clicks used to hit a hidden copy and time out (verified 24-Oct; the harness now prefers visible matches). Use pay_and_book.
