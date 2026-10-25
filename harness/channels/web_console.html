@@ -42,7 +42,7 @@ svg { flex: none; }
 .health .rows { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); }
 .health .rows div { display: flex; justify-content: space-between; gap: 8px; } .health .rows span:last-child { color: var(--ink); }
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; background: var(--gray-dot); }
-.dot.ok { background: var(--green); } .dot.run { background: var(--blue); } .dot.warn { background: var(--orange-dot); } .dot.bad { background: var(--red); }
+.dot.ok { background: var(--green); } .dot.busy { background: var(--blue); } .dot.warn { background: var(--orange-dot); } .dot.bad { background: var(--red); }
 .dot.pulse { box-shadow: 0 0 0 0 rgba(47,79,224,.45); animation: pulse 1.6s infinite; }
 .dot.warn.pulse { box-shadow: 0 0 0 0 rgba(234,88,12,.45); animation: pulse-o 1.6s infinite; }
 @keyframes pulse { 70% { box-shadow: 0 0 0 7px rgba(47,79,224,0); } 100% { box-shadow: 0 0 0 0 rgba(47,79,224,0); } }
@@ -274,7 +274,7 @@ function dur(ms) {
   if (d) return `${d}d ${h}h`; if (h) return `${h}h ${String(m).padStart(2, "0")}m`; if (m) return `${m}m ${String(x).padStart(2, "0")}s`; return `${x}s`;
 }
 const clockFmt = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
-const STATUS_DOT = {done: "ok", succeeded: "ok", running: "run", failed: "bad", crashed: "bad", error: "bad"};
+const STATUS_DOT = {done: "ok", succeeded: "ok", running: "busy", failed: "bad", crashed: "bad", error: "bad"};
 const TOOL_NAMES = {"browser.click": "Click", "browser.type": "Type", "browser.open": "Open page", "browser.scroll": "Scroll", "browser.wait_for": "Wait for page",
   "browser.press": "Press key", "browser.read": "Read page", "browser.focus": "Focus", "browser.eval": "Check page", "browser.screenshot": "Save screenshot", "browser.select": "Select", "desktop.click": "Click", "desktop.type": "Type", "desktop.open": "Open",
   "shell.run": "Run command", "file.read": "Read file", "file.write": "Write file", "vision.read_text": "Read text", "vision.ocr_into": "Solve captcha",
@@ -302,7 +302,7 @@ function renderTop(s) {
   const pill = $("pill");
   const next = s.jobs.map((j) => ({...j, at: toDate(j.next).getTime()})).sort((a, b) => a.at - b.at)[0];
   if (s.asks.length) { pill.className = "chip-pill wait"; pill.innerHTML = `<span class="dot warn pulse"></span>Waiting for you`; }
-  else if (s.running) { pill.className = "chip-pill run"; pill.innerHTML = `<span class="dot run pulse"></span>Working · step ${s.running.step || 0}${s.running.phase ? " · " + esc(pretty(s.running.phase)) : ""}`; }
+  else if (s.running) { pill.className = "chip-pill run"; pill.innerHTML = `<span class="dot busy pulse"></span>Working · step ${s.running.step || 0}${s.running.phase ? " · " + esc(pretty(s.running.phase)) : ""}`; }
   else if (next) { pill.className = "chip-pill"; pill.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2F4FE0" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>${esc(next.id.replace("sched:", "").replace(/_/g, " "))} in <b>${dur(next.at - now.getTime())}</b>`; }
   else { pill.className = "chip-pill"; pill.innerHTML = `<span class="dot ok"></span>Idle · ready`; }
   const h = s.health;  // absent from a daemon started before this page existed
@@ -421,7 +421,7 @@ function renderLive() {
 
   $("live").innerHTML = `
     <div class="lv-h">
-      <div class="lv-meta"><span class="badge ${esc(status)}">${live ? `<span class="dot ${waiting ? "warn" : "run"} pulse"></span>` : ""}${esc(waiting ? "waiting for you" : meta.status)}</span>
+      <div class="lv-meta"><span class="badge ${esc(status)}">${live ? `<span class="dot ${waiting ? "warn" : "busy"} pulse"></span>` : ""}${esc(waiting ? "waiting for you" : meta.status)}</span>
         <span>${esc(meta.skill || "zero-shot")} · ${esc(meta.trigger || "")}</span>
         <span class="right">step ${latest ? latest[0].step : 0} · ${started ? clockFmt((ended || now) - started) : "—"}</span>
         ${live ? `<button class="btn quiet" data-stop style="min-height:28px;font-size:12px">Stop run</button>` : ""}</div>
@@ -442,10 +442,19 @@ function renderLive() {
     </div>`;
 }
 
+let loadSeq = 0, loading = false;
 async function loadRun(runId, reset) {
+  // Overlapping polls must not append the same records twice: one poll at a time, and a reset
+  // (another run opened) makes any older reply stale.
+  if (loading && !reset) return;
+  const seq = ++loadSeq;
   if (reset) { after = 0; records = []; meta = null; pickedStep = null; }
-  const j = await api(`/api/run/${encodeURIComponent(runId)}?after=${after}`);
-  if (runId !== selected) return;
+  const from = after;
+  loading = true;
+  let j;
+  try { j = await api(`/api/run/${encodeURIComponent(runId)}?after=${from}`); }
+  finally { if (seq === loadSeq) loading = false; }
+  if (runId !== selected || seq !== loadSeq || from !== after) return;
   after = j.next;
   const changed = reset || j.records.length || !meta || meta.status !== j.meta.status || meta.steps !== j.meta.steps;
   records = records.concat(j.records);
@@ -488,7 +497,11 @@ document.addEventListener("click", async (e) => {
   if (r) { selected = r.dataset.run; follow = !!(S && S.running && S.running.run_id === selected); sideSig = ""; await loadRun(selected, true); if (S) renderSide(S);
     $("live").scrollIntoView({behavior: "smooth", block: "start"}); }
 });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("zoom").style.display = "none"; });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") $("zoom").style.display = "none";
+  // "/" jumps to the task box, as in most consoles.
+  if (e.key === "/" && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) { e.preventDefault(); $("task").focus(); }
+});
 $("task").addEventListener("input", (e) => { e.target.style.height = "44px"; e.target.style.height = Math.min(160, e.target.scrollHeight) + "px"; });
 $("task").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey || !e.shiftKey)) { e.preventDefault(); $("go").click(); } });
 $("go").onclick = async () => {

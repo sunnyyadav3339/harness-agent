@@ -22,3 +22,5 @@ Rules: prefer primary/official sources; give numbers with units and dates; never
 sites found during research; don't download files unless the task asks.
 
 ## Learned Heuristics (auto-updated)
+- [Auto-learned 2026-10-25 04:39 IST]: If browser.open times out on YouTube, check for an existing Chrome window containing YouTube using desktop.focus before retrying.
+- [Auto-learned 2026-10-25 05:27 IST]: If browser.type on the YouTube search box times out, re-observe the page to refresh element IDs before retrying the same action.

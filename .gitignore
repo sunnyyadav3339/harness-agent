@@ -17,3 +17,6 @@ logs/
 
 # personal data stays local (template: workspace/data/passenger.example.yaml)
 workspace/data/passenger.yaml
+
+# demo video and screenshots for the Drive folder (large files)
+submission/
